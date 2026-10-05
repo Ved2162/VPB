@@ -1,0 +1,49 @@
+@import "tailwindcss";
+
+:root { --maroon: #7a1f1f; --ink: #2b140d; --gold: #c9a24b; --cream: #fffaf0; }
+html { scroll-behavior: smooth; overflow-x: clip; }
+body { background: var(--cream); color: #2b140d; font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; overflow-x: clip; }
+img, video { max-width: 100%; }
+.font-serif { font-family: Georgia, "Playfair Display", "Times New Roman", serif; }
+
+.btn-primary { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 999px; background: #7a1f1f; color: #f7ead7; font-weight: 700; font-size: 14px; padding: 12px 24px; transition: all .25s ease; box-shadow: 0 10px 24px rgba(122,31,31,.28); }
+.btn-primary:hover { background: #5f1616; transform: translateY(-1px); box-shadow: 0 14px 28px rgba(122,31,31,.34); }
+.btn-primary:active { transform: translateY(0) scale(.98); }
+.btn-gold { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 999px; background: linear-gradient(135deg,#d8b45e,#b8862f); color: #1c0f0a; font-weight: 800; font-size: 14px; padding: 12px 26px; transition: all .25s ease; box-shadow: 0 10px 24px rgba(201,162,75,.35); }
+.btn-gold:hover { transform: translateY(-1px); filter: brightness(1.05); }
+.btn-ghost { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 999px; border: 1.5px solid #d9c49a; color: #3a2118; font-weight: 700; font-size: 14px; padding: 11px 24px; transition: all .25s ease; background: #fff; }
+.btn-ghost:hover { border-color: #7a1f1f; color: #7a1f1f; }
+.input { width: 100%; border-radius: 14px; border: 1.5px solid #e7d6b8; background: #fff; padding: 11px 14px; font-size: 14px; outline: none; transition: all .2s; }
+.input:focus { border-color: #7a1f1f; box-shadow: 0 0 0 3px rgba(122,31,31,.12); }
+.label { display: block; font-size: 12.5px; font-weight: 700; letter-spacing: .04em; color: #5b3a28; margin-bottom: 6px; text-transform: uppercase; }
+.card { border-radius: 20px; border: 1px solid #ecdcb9; background: #fff; }
+
+.reveal { opacity: 0; transform: translateY(26px); transition: opacity .7s cubic-bezier(.22,1,.36,1), transform .7s cubic-bezier(.22,1,.36,1); }
+.reveal.in { opacity: 1; transform: none; }
+/* Never leave content hidden for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+}
+
+.toast-in { animation: toastIn .3s cubic-bezier(.22,1,.36,1); }
+@keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(.96); } to { opacity: 1; transform: none; } }
+
+.hero-fade { animation: heroFade 1s cubic-bezier(.22,1,.36,1) both; }
+.hero-fade-1 { animation-delay: .15s; } .hero-fade-2 { animation-delay: .3s; } .hero-fade-3 { animation-delay: .45s; }
+@keyframes heroFade { from { opacity: 0; transform: translateY(24px); } to { opacity: 1; transform: none; } }
+
+.skel { position: relative; overflow: hidden; background: #f1e4c8; border-radius: 14px; }
+.skel::after { content: ""; position: absolute; inset: 0; background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,.7) 50%, transparent 70%); animation: shimmer 1.3s infinite; }
+@keyframes shimmer { from { transform: translateX(-100%); } to { transform: translateX(100%); } }
+
+.marquee { display: flex; gap: 0; width: max-content; animation: marq 26s linear infinite; }
+@keyframes marq { to { transform: translateX(-50%); } }
+
+.track-line { position: absolute; left: 19px; top: 8px; bottom: 8px; width: 2px; background: #ecdcb9; }
+.no-scrollbar::-webkit-scrollbar { display: none; } .no-scrollbar { scrollbar-width: none; }
+.prose-vpb p { margin-bottom: 12px; line-height: 1.75; color: #57402f; }
+table.admin-table { width: 100%; font-size: 13.5px; }
+table.admin-table th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #8a6b4a; padding: 10px 12px; border-bottom: 1px solid #ecdcb9; white-space: nowrap; }
+table.admin-table td { padding: 11px 12px; border-bottom: 1px solid #f3e8d0; vertical-align: middle; }
+.pill { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 10px; font-size: 11.5px; font-weight: 700; }

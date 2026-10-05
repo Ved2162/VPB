@@ -1,0 +1,97 @@
+# ======================
+# Environment & Secrets
+# ======================
+.env
+.env.local
+.env.development
+.env.development.local
+.env.test
+.env.test.local
+.env.production
+.env.production.local
+*.env
+
+# ======================
+# Dependencies
+# ======================
+node_modules/
+.pnpm-store/
+
+# ======================
+# Next.js Build Output
+# ======================
+.next/
+out/
+dist/
+build/
+
+# ======================
+# TypeScript
+# ======================
+*.tsbuildinfo
+next-env.d.ts
+
+# ======================
+# Logs
+# ======================
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# ======================
+# OS Files
+# ======================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ======================
+# IDE / Editor
+# ======================
+.vscode/
+.idea/
+*.swp
+*.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ======================
+# Testing & Coverage
+# ======================
+coverage/
+.nyc_output/
+*.lcov
+
+# ======================
+# Temporary & Debug Files
+# ======================
+*.tmp
+*.temp
+*.bak
+*.backup
+*.orig
+cj.txt
+e2e_test.js
+test_*.js
+*.cookie
+*.cookies
+
+# ======================
+# Drizzle Kit Migrations (generated)
+# ======================
+drizzle/
+
+# ======================
+# Vercel
+# ======================
+.vercel
