@@ -2,11 +2,16 @@ import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { cookies } from "next/headers";
 
-if (!process.env.JWT_SECRET) {
-  throw new Error("JWT_SECRET environment variable is required");
+// JWT_SECRET is read at call time, not module load time,
+// so Next.js production build does not require the env var to be present.
+function getJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error("JWT_SECRET environment variable is required");
+  }
+  return secret;
 }
-// After the guard above, JWT_SECRET is guaranteed to be a string at runtime.
-const JWT_SECRET = process.env.JWT_SECRET as string;
+
 const COOKIE_NAME = "vpb_token";
 
 export type SessionUser = { id: string; name: string; email: string; role: string };
@@ -18,11 +23,11 @@ export async function verifyPassword(pw: string, hash: string) {
   return bcrypt.compare(pw, hash);
 }
 export function signToken(user: SessionUser) {
-  return jwt.sign(user, JWT_SECRET, { expiresIn: "14d" });
+  return jwt.sign(user, getJwtSecret(), { expiresIn: "14d" });
 }
 export function verifyToken(token: string): SessionUser | null {
   try {
-    return jwt.verify(token, JWT_SECRET) as SessionUser;
+    return jwt.verify(token, getJwtSecret()) as SessionUser;
   } catch {
     return null;
   }
