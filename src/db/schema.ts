@@ -41,8 +41,8 @@ export const products = pgTable("products", {
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   name: varchar("name", { length: 120 }).notNull(),
-  email: varchar("email", { length: 180 }).notNull().unique(),
-  phone: varchar("phone", { length: 20 }),
+  email: varchar("email", { length: 180 }),
+  phone: varchar("phone", { length: 20 }).notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   role: varchar("role", { length: 20 }).default("customer").notNull(),
   active: boolean("active").default(true).notNull(),

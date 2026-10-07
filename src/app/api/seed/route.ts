@@ -85,17 +85,17 @@ export async function POST() {
       });
     }
 
-    const adminEmail = process.env.SEED_ADMIN_EMAIL || "admin@vpbmanjha.in";
+    const adminPhone = process.env.SEED_ADMIN_PHONE || "9727328905";
     const adminPass  = process.env.SEED_ADMIN_PASSWORD || "VPBAdmin@2026!";
-    const exA = await db.select().from(users).where(eq(users.email, adminEmail));
+    const exA = await db.select().from(users).where(eq(users.phone, adminPhone));
     if (!exA.length) {
-      await db.insert(users).values({ name: "VPB Admin", email: adminEmail, phone: "9727328905", passwordHash: await hashPassword(adminPass), role: "admin", active: true });
+      await db.insert(users).values({ name: "VPB Admin", email: null, phone: adminPhone, passwordHash: await hashPassword(adminPass), role: "admin", active: true });
     }
-    const demoEmail = process.env.SEED_DEMO_EMAIL || "demo@vpb.in";
+    const demoPhone = process.env.SEED_DEMO_PHONE || "9999999999";
     const demoPass  = process.env.SEED_DEMO_PASSWORD || "Demo@VPB2026!";
-    const exD = await db.select().from(users).where(eq(users.email, demoEmail));
+    const exD = await db.select().from(users).where(eq(users.phone, demoPhone));
     if (!exD.length) {
-      await db.insert(users).values({ name: "Demo Customer", email: demoEmail, phone: "9999999999", passwordHash: await hashPassword(demoPass), role: "customer", active: true });
+      await db.insert(users).values({ name: "Demo Customer", email: null, phone: demoPhone, passwordHash: await hashPassword(demoPass), role: "customer", active: true });
     }
 
     const bEx = await db.select().from(banners);

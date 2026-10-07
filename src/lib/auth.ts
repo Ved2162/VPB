@@ -14,7 +14,7 @@ function getJwtSecret(): string {
 
 const COOKIE_NAME = "vpb_token";
 
-export type SessionUser = { id: string; name: string; email: string; role: string };
+export type SessionUser = { id: string; name: string; phone: string; role: string };
 
 export async function hashPassword(pw: string) {
   return bcrypt.hash(pw, 10);

@@ -22,8 +22,8 @@ export default function CheckoutPage() {
   const [pay, setPay] = useState("upi");
   const [placing, setPlacing] = useState(false);
   const [order, setOrder] = useState<any>(null);
-  const [loginF, setLoginF] = useState({ email: "", password: "" });
-  const [regF, setRegF] = useState({ name: "", email: "", password: "", phone: "" });
+  const [loginF, setLoginF] = useState({ phone: "", password: "" });
+  const [regF, setRegF] = useState({ name: "", phone: "", password: "" });
   const [mode, setMode] = useState<"login" | "register">("login");
   const [err, setErr] = useState("");
 
@@ -169,18 +169,15 @@ export default function CheckoutPage() {
                 {err && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{err}</p>}
                 {mode === "login" ? (
                   <div className="mt-4 space-y-3">
-                    <div><p className="label">Email</p><input value={loginF.email} onChange={(e) => setLoginF({ ...loginF, email: e.target.value })} className="input" placeholder="you@example.com" /></div>
+                    <div><p className="label">Mobile Number</p><input value={loginF.phone} onChange={(e) => setLoginF({ ...loginF, phone: e.target.value })} type="tel" className="input" placeholder="97273 28905" maxLength={15} /></div>
                     <div><p className="label">Password</p><input value={loginF.password} onChange={(e) => setLoginF({ ...loginF, password: e.target.value })} type="password" className="input" placeholder="••••••" /></div>
                     <button onClick={() => doLogin(false)} className="btn-primary w-full">Login & Continue</button>
                   </div>
                 ) : (
                   <div className="mt-4 space-y-3">
                     <div><p className="label">Full Name</p><input value={regF.name} onChange={(e) => setRegF({ ...regF, name: e.target.value })} className="input" placeholder="Your name" /></div>
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <div><p className="label">Email</p><input value={regF.email} onChange={(e) => setRegF({ ...regF, email: e.target.value })} className="input" /></div>
-                      <div><p className="label">Phone</p><input value={regF.phone} onChange={(e) => setRegF({ ...regF, phone: e.target.value })} className="input" /></div>
-                    </div>
-                    <div><p className="label">Password</p><input value={regF.password} onChange={(e) => setRegF({ ...regF, password: e.target.value })} type="password" className="input" /></div>
+                    <div><p className="label">Mobile Number</p><input value={regF.phone} onChange={(e) => setRegF({ ...regF, phone: e.target.value })} type="tel" className="input" placeholder="97273 28905" maxLength={15} /></div>
+                    <div><p className="label">Password (min 6)</p><input value={regF.password} onChange={(e) => setRegF({ ...regF, password: e.target.value })} type="password" className="input" /></div>
                     <button onClick={() => doLogin(true)} className="btn-primary w-full">Register & Continue</button>
                   </div>
                 )}

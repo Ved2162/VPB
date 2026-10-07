@@ -2,7 +2,7 @@
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
 
 export type CartLine = { id: string; slug: string; name: string; price: number; comparePrice?: number | null; image: string; qty: number; stock: number };
-export type Me = { id: string; name: string; email: string; role: string } | null;
+export type Me = { id: string; name: string; phone: string; role: string } | null;
 
 const CartCtx = createContext<{
   lines: CartLine[]; add: (p: Omit<CartLine, "qty">, qty?: number) => void;

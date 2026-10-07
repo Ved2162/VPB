@@ -65,7 +65,7 @@ export async function POST(req: Request) {
         trackingNumber: null, courier: null,
         shippingAddress: { name: address.name, phone: address.phone, addressLine: address.addressLine, city: address.city, state: address.state, pincode: address.pincode, landmark: address.landmark || "" },
         paymentMethod: "razorpay",
-        customerName: address.name, customerEmail: me.email, customerPhone: address.phone,
+        customerName: address.name, customerEmail: null, customerPhone: me.phone,
         cartSnapshot,
         paymentData: {},
       }).returning();
@@ -92,7 +92,7 @@ export async function POST(req: Request) {
       order,
       amount: total,
       currency: "INR",
-      prefill: { name: address.name, email: me.email, contact: address.phone },
+      prefill: { name: address.name, email: "", contact: me.phone },
     });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: e.message }, { status: 500 });

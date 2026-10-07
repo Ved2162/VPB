@@ -42,7 +42,7 @@ export async function POST(req: Request) {
       keyId: process.env.RAZORPAY_KEY_ID,
       order: { id: rzId, amount: inPaise(o[0].total), currency: "INR" },
       amount: o[0].total,
-      prefill: { name: o[0].customerName || "", email: me.email, contact: o[0].customerPhone || "" },
+      prefill: { name: o[0].customerName || "", email: "", contact: me.phone },
       existingOrderId: o[0].id,
     });
   } catch (e: any) {

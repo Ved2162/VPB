@@ -8,6 +8,15 @@ function setCookie(res: NextResponse, token: string) {
   res.cookies.set(COOKIE, token, { httpOnly: true, path: "/", maxAge: 60 * 60 * 24 * 14, sameSite: "lax" });
 }
 
+// Normalise phone: strip spaces, dashes, brackets; keep leading + if present
+function normalisePhone(raw: string): string {
+  return raw.replace(/[\s\-().]/g, "").trim();
+}
+
+function isValidPhone(phone: string): boolean {
+  return /^\+?[0-9]{7,15}$/.test(phone);
+}
+
 export async function GET(req: Request) {
   const u = getUserFromHeader(req);
   if (!u) return NextResponse.json({ ok: true, user: null });
@@ -23,44 +32,52 @@ export async function POST(req: Request) {
     const action = body.action as string;
 
     if (action === "register") {
-      const { name, email, password, phone } = body;
-      if (!name || !email || !password) return NextResponse.json({ ok: false, error: "Name, email and password are required" }, { status: 400 });
+      const { name, password } = body;
+      const phone = normalisePhone(body.phone || "");
+      if (!name || !phone || !password) return NextResponse.json({ ok: false, error: "Name, phone number and password are required" }, { status: 400 });
+      if (!isValidPhone(phone)) return NextResponse.json({ ok: false, error: "Enter a valid phone number (7–15 digits)" }, { status: 400 });
       if (password.length < 6) return NextResponse.json({ ok: false, error: "Password must be at least 6 characters" }, { status: 400 });
-      const ex = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim()));
-      if (ex.length) return NextResponse.json({ ok: false, error: "Email already registered. Please login." }, { status: 400 });
-      const ins = await db.insert(users).values({ name: name.trim(), email: email.toLowerCase().trim(), phone: phone || null, passwordHash: await hashPassword(password), role: "customer", active: true }).returning();
-      const token = signToken({ id: ins[0].id, name: ins[0].name, email: ins[0].email, role: ins[0].role });
-      const res = NextResponse.json({ ok: true, user: { id: ins[0].id, name: ins[0].name, email: ins[0].email, role: ins[0].role }, token });
+      const ex = await db.select().from(users).where(eq(users.phone, phone));
+      if (ex.length) return NextResponse.json({ ok: false, error: "This phone number is already registered. Please login." }, { status: 400 });
+      const ins = await db.insert(users).values({
+        name: name.trim(),
+        phone,
+        email: null,
+        passwordHash: await hashPassword(password),
+        role: "customer",
+        active: true,
+      }).returning();
+      const token = signToken({ id: ins[0].id, name: ins[0].name, phone: ins[0].phone!, role: ins[0].role });
+      const res = NextResponse.json({ ok: true, user: { id: ins[0].id, name: ins[0].name, phone: ins[0].phone, role: ins[0].role }, token });
       setCookie(res, token);
       return res;
     }
 
     if (action === "login") {
-      const { email, password } = body;
-      if (!email || !password) return NextResponse.json({ ok: false, error: "Email and password required" }, { status: 400 });
-      const rows = await db.select().from(users).where(eq(users.email, email.toLowerCase().trim()));
-      if (!rows.length) return NextResponse.json({ ok: false, error: "No account found with this email" }, { status: 401 });
+      const { password } = body;
+      const phone = normalisePhone(body.phone || "");
+      if (!phone || !password) return NextResponse.json({ ok: false, error: "Phone number and password are required" }, { status: 400 });
+      const rows = await db.select().from(users).where(eq(users.phone, phone));
+      if (!rows.length) return NextResponse.json({ ok: false, error: "No account found with this number" }, { status: 401 });
       if (!rows[0].active) return NextResponse.json({ ok: false, error: "Account disabled. Contact support." }, { status: 403 });
       const ok = await verifyPassword(password, rows[0].passwordHash);
       if (!ok) return NextResponse.json({ ok: false, error: "Incorrect password" }, { status: 401 });
-      const token = signToken({ id: rows[0].id, name: rows[0].name, email: rows[0].email, role: rows[0].role });
-      const res = NextResponse.json({ ok: true, user: { id: rows[0].id, name: rows[0].name, email: rows[0].email, role: rows[0].role }, token });
+      const token = signToken({ id: rows[0].id, name: rows[0].name, phone: rows[0].phone!, role: rows[0].role });
+      const res = NextResponse.json({ ok: true, user: { id: rows[0].id, name: rows[0].name, phone: rows[0].phone, role: rows[0].role }, token });
       setCookie(res, token);
       return res;
     }
 
     if (action === "forgot") {
-      const { email } = body;
-      const rows = await db.select().from(users).where(eq(users.email, (email || "").toLowerCase().trim()));
-      if (!rows.length) return NextResponse.json({ ok: true, message: "If an account exists, reset link sent to " + email });
-      return NextResponse.json({ ok: true, message: "Password reset link sent to " + email });
+      // Stub — no real SMS reset implemented yet
+      return NextResponse.json({ ok: true, message: "Contact support on WhatsApp +91 97273 28905 to reset your password." });
     }
 
     if (action === "update") {
       const me = getUserFromHeader(req);
       if (!me) return NextResponse.json({ ok: false, error: "Login required" }, { status: 401 });
-      const { name, phone } = body;
-      await db.update(users).set({ name: name || me.name, phone: phone || null }).where(eq(users.id, me.id));
+      const { name } = body;
+      await db.update(users).set({ name: name || me.name }).where(eq(users.id, me.id));
       return NextResponse.json({ ok: true });
     }
 

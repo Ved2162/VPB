@@ -14,13 +14,13 @@ export default function AccountPage() {
   const [tab, setTab] = useState("orders");
   const [orders, setOrders] = useState<any[]>([]);
   const [addrs, setAddrs] = useState<any[]>([]);
-  const [profile, setProfile] = useState({ name: "", phone: "" });
+  const [profile, setProfile] = useState({ name: "" });
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     if (!loading && !me) { localStorage.setItem("vpb_back", "/account"); router.push("/login"); }
     if (me) {
-      setProfile({ name: me.name || "", phone: (me as any).phone || "" });
+      setProfile({ name: me.name || "" });
       fetch("/api/orders", { credentials: "include" }).then((r) => r.json()).then((j) => setOrders(j.orders || [])).catch(() => {});
       fetch("/api/extra?res=addresses", { credentials: "include" }).then((r) => r.json()).then((j) => setAddrs(j.addresses || [])).catch(() => {});
     }
@@ -107,10 +107,9 @@ export default function AccountPage() {
           {tab === "profile" && (
             <div className="card p-6">
               <h3 className="font-serif text-xl font-bold">Profile</h3>
-              <p className="mt-1 text-sm text-stone-500">{me.email} • {me.role}</p>
+              <p className="mt-1 text-sm text-stone-500">{me.phone} • {me.role}</p>
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
                 <div><p className="label">Full Name</p><input value={profile.name} onChange={(e) => setProfile({ ...profile, name: e.target.value })} className="input" /></div>
-                <div><p className="label">Phone</p><input value={profile.phone} onChange={(e) => setProfile({ ...profile, phone: e.target.value })} className="input" /></div>
               </div>
               <button onClick={saveProfile} disabled={busy} className="btn-primary mt-4 disabled:opacity-60">{busy ? "Saving…" : "Save Changes"}</button>
             </div>
@@ -119,7 +118,7 @@ export default function AccountPage() {
           {tab === "settings" && (
             <div className="card p-6">
               <h3 className="font-serif text-xl font-bold">Account Settings</h3>
-              <p className="mt-2 text-sm text-stone-500">Email notifications for order updates are enabled. To disable your account or change password, contact care@vpbmanjha.in or WhatsApp +91 97273 28905.</p>
+              <p className="mt-2 text-sm text-stone-500">To change your password or deactivate your account, contact us on WhatsApp +91 97273 28905.</p>
               <button onClick={async () => { await logout(); router.push("/"); }} className="btn-ghost mt-4">Logout from all devices</button>
             </div>
           )}
