@@ -89,7 +89,7 @@ export async function POST() {
     const adminPass  = process.env.SEED_ADMIN_PASSWORD || "VPBAdmin@2026!";
     const exA = await db.select().from(users).where(eq(users.email, adminEmail));
     if (!exA.length) {
-      await db.insert(users).values({ name: "VPB Admin", email: adminEmail, phone: "9876543210", passwordHash: await hashPassword(adminPass), role: "admin", active: true });
+      await db.insert(users).values({ name: "VPB Admin", email: adminEmail, phone: "9727328905", passwordHash: await hashPassword(adminPass), role: "admin", active: true });
     }
     const demoEmail = process.env.SEED_DEMO_EMAIL || "demo@vpb.in";
     const demoPass  = process.env.SEED_DEMO_PASSWORD || "Demo@VPB2026!";

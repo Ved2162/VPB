@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ShoppingBag, Search, Menu, X, User, Star, Plus, Minus, Trash2, AtSign, Phone, Mail, MapPin, Truck, ShieldCheck, BadgeCheck, ChevronRight, Heart, Eye, ArrowRight } from "lucide-react";
 import { useCart, useAuth, useToast } from "@/lib/store";
-import { money, INSTAGRAM_URL } from "@/lib/data";
+import { money, INSTAGRAM_URL, PHONE_DISPLAY, WHATSAPP_URL, ADDRESS, ADDRESS_MAPS_URL } from "@/lib/data";
 
 export function Logo({ light = false }: { light?: boolean }) {
   return (
@@ -217,9 +217,9 @@ export function Footer() {
         <div>
           <h4 className="font-serif text-lg font-bold text-[#f7ead7]">Contact</h4>
           <ul className="mt-3 space-y-2.5 text-sm">
-            <li className="flex gap-2"><Phone size={15} className="mt-0.5 text-[#c9a24b]" /> +91 98765 43210</li>
+            <li className="flex gap-2"><Phone size={15} className="mt-0.5 text-[#c9a24b]" /><a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="hover:text-white transition">{PHONE_DISPLAY}</a></li>
             <li className="flex gap-2"><Mail size={15} className="mt-0.5 text-[#c9a24b]" /> care@vpbmanjha.in</li>
-            <li className="flex gap-2"><MapPin size={15} className="mt-0.5 text-[#c9a24b]" /> Bareilly, Uttar Pradesh, India</li>
+            <li className="flex gap-2 items-start"><MapPin size={15} className="mt-0.5 shrink-0 text-[#c9a24b]" /><a href={ADDRESS_MAPS_URL} target="_blank" rel="noopener noreferrer" className="hover:text-white transition">{ADDRESS}</a></li>
             <li className="flex gap-2"><Truck size={15} className="mt-0.5 text-[#c9a24b]" /> Ships across India • 4–6 days</li>
           </ul>
           <div className="mt-3 flex items-center gap-2 text-xs text-[#c9b183]"><ShieldCheck size={14} /> Secure checkout <BadgeCheck size={14} /> Genuine VPB</div>
@@ -286,7 +286,7 @@ export function RevealInit() {
 }
 
 export function TrustBar() {
-  const items = [[Truck, "Pan-India Shipping", "4–6 working days"], [ShieldCheck, "100% Genuine VPB", "Pure cotton manjha"], [BadgeCheck, "Quality Tested", "Every reel checked"], [Phone, "WhatsApp Support", "+91 98765 43210"]];
+  const items = [[Truck, "Pan-India Shipping", "4–6 working days"], [ShieldCheck, "100% Genuine VPB", "Pure cotton manjha"], [BadgeCheck, "Quality Tested", "Every reel checked"], [Phone, "WhatsApp Support", PHONE_DISPLAY]];
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {items.map(([Icon, t, s]: any) => (

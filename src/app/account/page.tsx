@@ -119,7 +119,7 @@ export default function AccountPage() {
           {tab === "settings" && (
             <div className="card p-6">
               <h3 className="font-serif text-xl font-bold">Account Settings</h3>
-              <p className="mt-2 text-sm text-stone-500">Email notifications for order updates are enabled. To disable your account or change password, contact care@vpbmanjha.in or WhatsApp +91 98765 43210.</p>
+              <p className="mt-2 text-sm text-stone-500">Email notifications for order updates are enabled. To disable your account or change password, contact care@vpbmanjha.in or WhatsApp +91 97273 28905.</p>
               <button onClick={async () => { await logout(); router.push("/"); }} className="btn-ghost mt-4">Logout from all devices</button>
             </div>
           )}

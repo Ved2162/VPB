@@ -29,7 +29,7 @@ export default function RegisterPage() {
         <div className="mt-4 space-y-3">
           <div><p className="label">Full Name</p><input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} className="input" placeholder="Your name" /></div>
           <div><p className="label">Email</p><input value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} className="input" placeholder="you@example.com" /></div>
-          <div><p className="label">Phone</p><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} className="input" placeholder="98765 43210" /></div>
+          <div><p className="label">Phone</p><input value={f.phone} onChange={(e) => setF({ ...f, phone: e.target.value })} className="input" placeholder="97273 28905" /></div>
           <div><p className="label">Password (min 6)</p><input value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} type="password" className="input" /></div>
           <button onClick={submit} disabled={busy} className="btn-primary w-full disabled:opacity-60">{busy ? "Creating…" : "Register"}</button>
         </div>
