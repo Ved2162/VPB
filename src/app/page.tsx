@@ -43,7 +43,7 @@ export default async function Home() {
               The Sharpest Thread<br />Bareilly Ever Made.
             </h1>
             <p className="hero-fade hero-fade-2 mt-4 max-w-xl text-[16px] leading-relaxed text-[#e9d5ae]">
-              VPB — Verai Patang Bhandar. 100% pure cotton manjha, hand-rubbed by master karigars, glass-coated for tournament pench. Trusted on terraces across India.
+              VPB — Verai Patang Bhandar. 100% pure cotton manjha, hand-rubbed by master karigars, coated with authentic Bareilly manjha paste for tournament pench. Trusted on terraces across India.
             </p>
             <div className="hero-fade hero-fade-3 mt-7 flex flex-wrap gap-3">
               <Link href="/shop" className="btn-gold !px-8 !py-3.5 !text-[15px]">Shop Collection <ArrowRight size={17} /></Link>
@@ -77,7 +77,7 @@ export default async function Home() {
           <div className="reveal">
             <p className="text-[12px] font-bold uppercase tracking-[0.28em] text-[#7a1f1f]">— Verai Patang Bhandar —</p>
             <h2 className="mt-2 font-serif text-[clamp(1.8rem,4vw,2.8rem)] font-bold leading-tight">Three generations.<br />One promise — <em className="text-[#7a1f1f]">sharp, honest manjha.</em></h2>
-            <p className="mt-4 leading-relaxed text-stone-600">Every VPB reel starts as pure cotton thread in the gallis of Bareilly — boiled in rice-starch, rubbed with hand-pounded glass, dried in the sun and tested metre by metre. No shortcuts. No mixing. Just the manjha our own family flies.</p>
+            <p className="mt-4 leading-relaxed text-stone-600">Every VPB reel starts as pure cotton thread in the gallis of Bareilly — boiled in rice-starch, coated with authentic Bareilly manjha paste, dried in the sun and tested metre by metre. No shortcuts. No mixing. Just the manjha our own family flies.</p>
             <div className="mt-6 grid grid-cols-3 gap-4">
               {[["40+", "Years of craft"], ["2L+", "Reels flown"], ["4.8★", "Avg. rating"]].map(([n, l]) => (
                 <div key={l} className="rounded-2xl border border-[#ecdcb9] bg-white px-4 py-4 text-center"><p className="font-serif text-2xl font-black text-[#7a1f1f]">{n}</p><p className="text-xs font-semibold text-stone-500">{l}</p></div>
@@ -136,7 +136,7 @@ export default async function Home() {
               <p className="text-[12px] font-bold uppercase tracking-[0.3em] text-[#c9a24b]">VPB Craftsmanship</p>
               <h3 className="mt-2 font-serif text-[clamp(1.6rem,3.4vw,2.4rem)] font-bold leading-tight text-[#f7ead7]">Manjha is not made.<br />It is <em className="text-[#f5d67b]">prepared</em> — like a ritual.</h3>
               <ul className="mt-5 space-y-3 text-[14px] text-[#d9c49a]">
-                {[["01", "Pure cotton, starched & sun-dried"], ["02", "Hand-pounded glass, even coating"], ["03", "500-metre quality checks, every reel"]].map(([n, t]) => (
+                {[["01", "Pure cotton, starched & sun-dried"], ["02", "Authentic Bareilly manjha paste, even coating"], ["03", "500-metre quality checks, every reel"]].map(([n, t]) => (
                   <li key={n} className="flex items-center gap-3"><span className="grid h-9 w-9 place-items-center rounded-full border border-[#c9a24b]/40 font-serif text-sm font-bold text-[#f5d67b]">{n}</span>{t}</li>
                 ))}
               </ul>

@@ -12,7 +12,7 @@ export default function About() {
         <div className="relative aspect-[4/4.4] w-full overflow-hidden rounded-[24px]"><SafeImg src={CRAFT_IMAGES[0]} alt="VPB heritage" sizes="50vw" className="object-cover" /></div>
         <div className="prose-vpb text-[15.5px]">
           <p><b className="text-[#2b140d]">VPB began on a Bareilly rooftop</b> — with a charkhi, a pot of rice-starch manjha paste, and a grandfather who believed a thread should sing before it cuts.</p>
-          <p>Three generations later, Verai Patang Bhandar still prepares manjha the slow way: pure cotton yarn, hand-pounded glass, sun-drying, and metre-by-metre testing. Our karigars sign every batch — because reputation flies with every reel.</p>
+          <p>Three generations later, Verai Patang Bhandar still prepares manjha the slow way: pure cotton yarn, authentic Bareilly manjha paste, sun-drying, and metre-by-metre testing. Our karigars sign every batch — because reputation flies with every reel.</p>
           <p>Today VPB ships Adnan Special, Black Panther, Nawab, Ustad and Heritage reels to flyers in 20+ states — from Jaipur terraces to Ahmedabad's Uttarayan sky. Same paste. Same hands. Same promise.</p>
           <div className="mt-6 grid grid-cols-3 gap-3">
             {[["100%", "Pure Cotton"], ["500m", "Test Interval"], ["24h", "Dispatch"]].map(([n, l]) => (

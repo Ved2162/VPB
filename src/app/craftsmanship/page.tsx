@@ -4,8 +4,8 @@ import { HERO_VIDEO_2, HERO_POSTER, INSTAGRAM_URL } from "@/lib/data";
 import { SafeImg } from "@/components/site";
 
 const STEPS = [
-  ["https://images.pexels.com/photos/15049300/pexels-photo-15049300.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "01 — Selecting the Cotton", "Long-staple pure cotton only. No nylon, no mixing. The thread must hold glass without snapping in pench."],
-  ["https://images.pexels.com/photos/12672112/pexels-photo-12672112.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "02 — Starch & Glass Paste", "Rice-starch boiled to exact thickness, mixed with hand-pounded glass powder. This is the family recipe."],
+  ["https://images.pexels.com/photos/15049300/pexels-photo-15049300.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "01 — Selecting the Cotton", "Long-staple pure cotton only. No nylon, no mixing. The thread must hold the authentic Bareilly manjha paste without snapping in pench."],
+  ["https://images.pexels.com/photos/12672112/pexels-photo-12672112.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "02 — Starch & Manjha Paste", "Rice-starch boiled to exact thickness, blended with authentic Bareilly manjha paste. This is the family recipe, passed down for generations."],
   ["https://images.pexels.com/photos/4440344/pexels-photo-4440344.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "03 — Hand Rubbing", "Karigars pull kilometres of thread through paste-soaked pads — twice for 6 cord, thrice for 9 cord — at a runner's pace."],
   ["https://images.pexels.com/photos/15470478/pexels-photo-15470478.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "04 — Sun Drying & Testing", "Reels sun-dried, then tension-tested every 500m. Only reels that sing pass the VPB seal."],
 ];
