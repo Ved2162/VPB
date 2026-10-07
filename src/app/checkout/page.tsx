@@ -236,8 +236,9 @@ export default function CheckoutPage() {
                         </button>
                       ))}
                     </div>
-                    {pay === "upi" && <input placeholder="yourname@upi (test mode — any value works)" className="input mt-3" />}
-                    <p className="rounded-xl bg-[#fff4de] px-3 py-2 text-[12.5px] font-semibold text-[#7a5b1e]">You will be redirected to Razorpay's secure UPI/Card/Net-Banking checkout. We do not store card details.</p>
+                    {pay === "upi" && <input placeholder="yourname@upi" className="input mt-3" />}
+                    <p className="rounded-xl bg-[#fff4de] px-3 py-2 text-[12.5px] font-semibold text-[#7a5b1e]">You will be redirected to Razorpay's secure UPI/Card checkout. We do not store card details.</p>
+                    <p className="rounded-xl bg-red-50 px-3 py-2 text-[12.5px] font-semibold text-red-700">⚠️ No return. No replacement. All sales are final — please verify your order above before paying.</p>
                     {err && (
                       <div className="mt-2 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">
                         <AlertTriangle size={16} className="mt-0.5 shrink-0" />

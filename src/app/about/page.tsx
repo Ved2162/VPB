@@ -25,7 +25,7 @@ export default function About() {
       <div className="mt-16">
         <SectionHead kicker="Philosophy" title="What VPB Stands For" />
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {[["Authenticity First", "Every reel carries batch number, seal and karigar stamp. If it doesn't say VPB, it isn't VPB."], ["Craft Over Volume", "We prepare limited batches daily instead of mass-coating. Slow manjha cuts faster."], ["Flyer's Trust", "Pench guarantee, honest cord counts, real prices. Terraces remember who cheated — we never do."]].map(([t, s]) => (
+          {[["Authenticity First", "Every reel carries batch number, seal and karigar stamp. If it doesn't say VPB, it isn't VPB."], ["Craft Over Volume", "We prepare limited batches daily instead of mass-coating. Slow manjha cuts faster."], ["Flyer's Trust", "Honest cord counts, real prices, no false promises. All sales are final — we stand by quality before it leaves our hands."]].map(([t, s]) => (
             <div key={t} className="card p-7"><p className="font-serif text-xl font-bold">{t}</p><p className="mt-2 text-sm leading-relaxed text-stone-600">{s}</p></div>
           ))}
         </div>
