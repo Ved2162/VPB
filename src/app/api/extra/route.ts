@@ -64,7 +64,7 @@ export async function POST(req: Request) {
     if (body.res === "pincode") {
       const pin = (body.pincode || "").trim();
       if (!/^\d{6}$/.test(pin)) return NextResponse.json({ ok: false, error: "Enter a valid 6-digit pincode" }, { status: 400 });
-      return NextResponse.json({ ok: true, eta: "Delivery in 4–6 working days", charge: 99, cod: true });
+      return NextResponse.json({ ok: true, eta: "Delivery in 4–6 working days", charge: 99, cod: false });
     }
     return NextResponse.json({ ok: false, error: "unknown" }, { status: 400 });
   } catch (e: any) {

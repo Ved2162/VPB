@@ -11,7 +11,7 @@ export default function Contact() {
     ["How long is delivery?", "4–6 working days across India. Dispatched within 24 hours, vacuum-packed."],
     ["Is the manjha pure cotton?", "Yes — 100% pure cotton, no nylon mix. Every reel is batch-tested."],
     ["Which cord should I buy?", "6 cord for daily flying, 9 cord for tournaments, 12/16 for big kites and strong winds."],
-    ["Do you offer COD?", "Yes, Cash on Delivery is available across India."],
+    ["Do you offer COD?", "No, we currently accept UPI and Card payments only via Razorpay's secure checkout."],
     ["What if my reel underperforms?", "Our pench guarantee: tell us within 7 days with photos and we replace it."],
   ];
   const [open, setOpen] = useState(0);

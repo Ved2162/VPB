@@ -230,7 +230,7 @@ export default function CheckoutPage() {
                     <h3 className="font-serif text-xl font-bold">Step 4 — Payment</h3>
                     <p className="mt-1 flex items-center gap-1.5 text-xs text-stone-500"><Lock size={12} /> Secured test payment. No real card stored.</p>
                     <div className="mt-3 grid gap-2">
-                      {[["upi", "UPI — GPay / PhonePe / Paytm"], ["card", "Credit / Debit Card (test)"], ["cod", "Cash on Delivery"]].map(([v, l]) => (
+                      {[["upi", "UPI — GPay / PhonePe / Paytm"], ["card", "Credit / Debit Card"]].map(([v, l]) => (
                         <button key={v} onClick={() => setPay(v)} className={`flex items-center gap-3 rounded-2xl border-2 p-4 text-left text-sm font-bold ${pay === v ? "border-[#7a1f1f] bg-[#fff6e3]" : "border-[#ecdcb9]"}`}>
                           <span className={`grid h-5 w-5 place-items-center rounded-full border-2 ${pay === v ? "border-[#7a1f1f]" : "border-stone-300"}`}>{pay === v && <span className="h-2.5 w-2.5 rounded-full bg-[#7a1f1f]" />}</span>{l}
                         </button>
