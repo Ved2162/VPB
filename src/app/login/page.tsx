@@ -85,14 +85,17 @@ function LoginForm() {
       setErr(j.error);
       return;
     }
-    // Set user in context immediately so account page renders without waiting
+    // Set user in context immediately
     setUser({ id: j.user.id, name: j.user.name, phone: j.user.phone, role: j.user.role });
     toast("Welcome" + (j.isNew ? " to VPB!" : " back, " + j.user.name.split(" ")[0] + "!"));
     const back = searchParams.get("back") || localStorage.getItem("vpb_back") || "";
     localStorage.removeItem("vpb_back");
-    // Small delay so the cookie is committed before navigation
-    await new Promise((r) => setTimeout(r, 100));
-    router.replace(back || "/account");
+    const dest = back || "/account";
+    // Use full page navigation so the browser commits the httpOnly cookie
+    // before the next request hits the middleware. router.replace() is a
+    // client-side navigation that sends no new request, so the cookie from
+    // the OTP verify Set-Cookie header may not be available to middleware yet.
+    window.location.href = dest;
   };
 
   return (

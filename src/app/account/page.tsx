@@ -73,7 +73,7 @@ export default function AccountPage() {
           <h1 className="font-serif text-3xl font-bold">Namaste, {me.name.split(" ")[0]} 🙏</h1>
         </div>
         <button
-          onClick={async () => { await logout(); router.replace("/"); }}
+          onClick={async () => { await logout(); window.location.href = "/"; }}
           className="btn-ghost !py-2.5 text-[13px]"
         >
           <LogOut size={15} /> Logout
@@ -186,7 +186,7 @@ export default function AccountPage() {
             <div className="card p-6">
               <h3 className="font-serif text-xl font-bold">Account Settings</h3>
               <p className="mt-2 text-sm text-stone-500">To change your password or deactivate your account, contact us on WhatsApp +91 97273 28905.</p>
-              <button onClick={async () => { await logout(); router.replace("/"); }} className="btn-ghost mt-4">
+              <button onClick={async () => { await logout(); window.location.href = "/"; }} className="btn-ghost mt-4">
                 Logout from all devices
               </button>
             </div>
