@@ -1,5 +1,5 @@
 "use client";
-import React, { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef } from "react";
 
 export type CartLine = { id: string; slug: string; name: string; price: number; comparePrice?: number | null; image: string; qty: number; stock: number };
 export type Me = { id: string; name: string; phone: string; role: string } | null;
@@ -10,12 +10,31 @@ const CartCtx = createContext<{
   open: boolean; setOpen: (v: boolean) => void; count: number; subtotal: number; lastAdded: number;
 }>({ lines: [], add: () => {}, setQty: () => {}, remove: () => {}, clear: () => {}, open: false, setOpen: () => {}, count: 0, subtotal: 0, lastAdded: 0 });
 
-const AuthCtx = createContext<{ me: Me; loading: boolean; refresh: () => Promise<void>; logout: () => Promise<void>; setUser: (u: Me) => void }>({ me: null, loading: true, refresh: async () => {}, logout: async () => {}, setUser: () => {} });
+const AuthCtx = createContext<{
+  me: Me; loading: boolean;
+  refresh: () => Promise<void>;
+  logout: () => Promise<void>;
+  setUser: (u: Me) => void;
+}>({ me: null, loading: true, refresh: async () => {}, logout: async () => {}, setUser: () => {} });
+
 const ToastCtx = createContext<{ toast: (msg: string) => void }>({ toast: () => {} });
 
 export function useCart() { return useContext(CartCtx); }
 export function useAuth() { return useContext(AuthCtx); }
 export function useToast() { return useContext(ToastCtx); }
+
+async function fetchMe(): Promise<Me> {
+  try {
+    const r = await Promise.race([
+      fetch("/api/auth", { credentials: "include" }),
+      new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+    ]);
+    const j = await r.json();
+    return j.user || null;
+  } catch {
+    return null;
+  }
+}
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [lines, setLines] = useState<CartLine[]>([]);
@@ -24,6 +43,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [me, setMe] = useState<Me>(null);
   const [loading, setLoading] = useState(true);
   const [toasts, setToasts] = useState<{ id: number; msg: string }[]>([]);
+  const retryRef = useRef(false);
 
   const toast = useCallback((msg: string) => {
     const id = Date.now() + Math.random();
@@ -37,26 +57,43 @@ export function Providers({ children }: { children: React.ReactNode }) {
       if (raw) setLines(JSON.parse(raw));
     } catch {}
   }, []);
+
   useEffect(() => {
     try { localStorage.setItem("vpb_cart", JSON.stringify(lines)); } catch {}
   }, [lines]);
 
+  // On mount: fetch session. If null but cookie might exist (just logged in),
+  // retry once after 300ms to handle the cookie-commit delay.
   const refresh = useCallback(async () => {
-    try {
-      const r = await Promise.race([
-        fetch("/api/auth", { credentials: "include" }),
-        new Promise<never>((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
-      ]);
-      const j = await r.json();
-      setMe(j.user || null);
-    } catch { setMe(null); }
+    setLoading(true);
+    const user = await fetchMe();
+    if (user) {
+      setMe(user);
+      setLoading(false);
+      return;
+    }
+    // Retry once after a short delay — handles the case where the httpOnly
+    // cookie was just set by OTP verify and hasn't reached the next request yet.
+    if (!retryRef.current) {
+      retryRef.current = true;
+      await new Promise((r) => setTimeout(r, 400));
+      const retry = await fetchMe();
+      setMe(retry);
+      retryRef.current = false;
+    } else {
+      setMe(null);
+    }
     setLoading(false);
   }, []);
+
   useEffect(() => { refresh(); }, [refresh]);
 
   const logout = useCallback(async () => {
+    // Clear cookie on server first
     await fetch("/api/auth", { method: "DELETE", credentials: "include" });
+    // Then clear local state
     setMe(null);
+    setLoading(false);
     toast("Logged out");
   }, [toast]);
 
@@ -69,11 +106,19 @@ export function Providers({ children }: { children: React.ReactNode }) {
     setLastAdded(Date.now());
     setOpen(true);
   }, []);
+
   const setQty = useCallback((id: string, qty: number) => {
     setLines((prev) => qty <= 0 ? prev.filter((l) => l.id !== id) : prev.map((l) => (l.id === id ? { ...l, qty: Math.min(qty, l.stock || 99) } : l)));
   }, []);
+
   const remove = useCallback((id: string) => setLines((p) => p.filter((l) => l.id !== id)), []);
   const clear = useCallback(() => setLines([]), []);
+
+  // setUser: called after OTP verify — sets me immediately AND marks loading done
+  const setUser = useCallback((u: Me) => {
+    setMe(u);
+    setLoading(false);
+  }, []);
 
   const { count, subtotal } = useMemo(() => ({
     count: lines.reduce((a, l) => a + l.qty, 0),
@@ -81,7 +126,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }), [lines]);
 
   return (
-    <AuthCtx.Provider value={{ me, loading, refresh, logout, setUser: (u) => { setMe(u); setLoading(false); } }}>
+    <AuthCtx.Provider value={{ me, loading, refresh, logout, setUser }}>
       <CartCtx.Provider value={{ lines, add, setQty, remove, clear, open, setOpen, count, subtotal, lastAdded }}>
         <ToastCtx.Provider value={{ toast }}>
           {children}
