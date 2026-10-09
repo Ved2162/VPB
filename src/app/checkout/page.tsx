@@ -12,7 +12,7 @@ const STEPS = ["Account", "Address", "Summary", "Payment", "Done"];
 
 export default function CheckoutPage() {
   const { lines, subtotal, clear } = useCart();
-  const { me, loading, refresh } = useAuth();
+  const { me, loading, refresh, setUser } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const [step, setStep] = useState(0);
@@ -78,7 +78,7 @@ export default function CheckoutPage() {
     const r = await fetch("/api/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ phone: otpPhone, otp: otpCode, name: otpName.trim() }) });
     const j = await r.json();
     if (!j.ok) { if (j.needName && !otpName.trim()) { setErr("Enter your name"); setOtpStep("phone"); return; } setErr(j.error); return; }
-    await refresh();
+    setUser({ id: j.user.id, name: j.user.name, phone: j.user.phone, role: j.user.role });
     toast("Welcome" + (j.isNew ? " to VPB!" : " back, " + j.user.name.split(" ")[0] + "!"));
     setStep(1);
   };

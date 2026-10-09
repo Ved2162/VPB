@@ -18,7 +18,12 @@ export default function AccountPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!loading && !me) { router.replace("/login?back=/account"); }
+    if (!loading && !me) {
+      // Small guard: if we just landed here from OTP login, give the cookie
+      // one extra tick to be available before treating as unauthenticated
+      const t = setTimeout(() => router.replace("/login?back=/account"), 300);
+      return () => clearTimeout(t);
+    }
     if (me) {
       setProfile({ name: me.name || "" });
       fetch("/api/orders", { credentials: "include" }).then((r) => r.json()).then((j) => setOrders(j.orders || [])).catch(() => {});

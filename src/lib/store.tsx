@@ -10,7 +10,7 @@ const CartCtx = createContext<{
   open: boolean; setOpen: (v: boolean) => void; count: number; subtotal: number; lastAdded: number;
 }>({ lines: [], add: () => {}, setQty: () => {}, remove: () => {}, clear: () => {}, open: false, setOpen: () => {}, count: 0, subtotal: 0, lastAdded: 0 });
 
-const AuthCtx = createContext<{ me: Me; loading: boolean; refresh: () => Promise<void>; logout: () => Promise<void> }>({ me: null, loading: true, refresh: async () => {}, logout: async () => {} });
+const AuthCtx = createContext<{ me: Me; loading: boolean; refresh: () => Promise<void>; logout: () => Promise<void>; setUser: (u: Me) => void }>({ me: null, loading: true, refresh: async () => {}, logout: async () => {}, setUser: () => {} });
 const ToastCtx = createContext<{ toast: (msg: string) => void }>({ toast: () => {} });
 
 export function useCart() { return useContext(CartCtx); }
@@ -81,7 +81,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }), [lines]);
 
   return (
-    <AuthCtx.Provider value={{ me, loading, refresh, logout }}>
+    <AuthCtx.Provider value={{ me, loading, refresh, logout, setUser: setMe }}>
       <CartCtx.Provider value={{ lines, add, setQty, remove, clear, open, setOpen, count, subtotal, lastAdded }}>
         <ToastCtx.Provider value={{ toast }}>
           {children}

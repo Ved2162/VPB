@@ -18,7 +18,7 @@ function LoginForm() {
   const [cooldown, setCooldown] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const { me, loading, refresh } = useAuth();
+  const { me, loading, refresh, setUser } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -85,7 +85,8 @@ function LoginForm() {
       setErr(j.error);
       return;
     }
-    await refresh();
+    // Directly update auth context — avoids race between Set-Cookie and next fetch
+    setUser({ id: j.user.id, name: j.user.name, phone: j.user.phone, role: j.user.role });
     toast("Welcome" + (j.isNew ? " to VPB!" : " back, " + j.user.name.split(" ")[0] + "!"));
     const back = searchParams.get("back") || localStorage.getItem("vpb_back") || "";
     localStorage.removeItem("vpb_back");
