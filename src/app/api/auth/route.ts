@@ -92,7 +92,7 @@ export async function POST(req: Request) {
 
     if (action === "forgot") {
       // Stub — no real SMS reset implemented yet
-      return NextResponse.json({ ok: true, message: "Contact support on WhatsApp +91 97273 28905 to reset your password." });
+      return NextResponse.json({ ok: true, message: "Contact support on WhatsApp +91 90811 11697 to reset your password." });
     }
 
     if (action === "update") {

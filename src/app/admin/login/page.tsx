@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth, useToast } from "@/lib/store";
@@ -22,7 +22,7 @@ export default function AdminLogin() {
           onChange={(e) => setPhone(e.target.value)}
           type="tel"
           className="input !border-white/20 !bg-white/10 !text-white"
-          placeholder="97273 28905"
+          placeholder="90811 11697"
           maxLength={15}
         />
         <p className="label mt-3 !text-[#c9a24b]">Password</p>

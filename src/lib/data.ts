@@ -5,8 +5,8 @@ export const HERO_VIDEO_2 = "https://videos.pexels.com/video-files/35740287/1514
 export const INSTAGRAM_HANDLE = "@verai_patang_bhandar";
 export const INSTAGRAM_URL = "https://www.instagram.com/verai_patang_bhandar";
 
-export const PHONE = "9727328905";
-export const PHONE_DISPLAY = "+91 97273 28905";
+export const PHONE = "9081111697";
+export const PHONE_DISPLAY = "+91 90811 11697";
 export const WHATSAPP_URL = `https://wa.me/91${PHONE}`;
 
 export const ADDRESS = "Verai Patang Bhandar, Cluster Nikol 4 Swagat Park 1(1-36), Nicol Gam, Nikol, Ahmedabad, Gujarat 380049";

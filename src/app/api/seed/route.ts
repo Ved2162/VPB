@@ -85,7 +85,7 @@ export async function POST() {
       });
     }
 
-    const adminPhone = process.env.SEED_ADMIN_PHONE || "9727328905";
+    const adminPhone = process.env.SEED_ADMIN_PHONE || "9081111697";
     const adminPass  = process.env.SEED_ADMIN_PASSWORD || "VPBAdmin@2026!";
     const exA = await db.select().from(users).where(eq(users.phone, adminPhone));
     if (!exA.length) {

@@ -185,7 +185,7 @@ export default function AccountPage() {
           {tab === "settings" && (
             <div className="card p-6">
               <h3 className="font-serif text-xl font-bold">Account Settings</h3>
-              <p className="mt-2 text-sm text-stone-500">To change your password or deactivate your account, contact us on WhatsApp +91 97273 28905.</p>
+              <p className="mt-2 text-sm text-stone-500">To change your password or deactivate your account, contact us on WhatsApp +91 90811 11697.</p>
               <button onClick={async () => { await logout(); window.location.href = "/"; }} className="btn-ghost mt-4">
                 Logout from all devices
               </button>
