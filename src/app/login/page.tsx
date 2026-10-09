@@ -148,7 +148,7 @@ function LoginForm() {
         ) : (
           <>
             <p className="mt-1 text-sm text-stone-500">
-              OTP sent to <b>+91 {masked}</b>. Valid for 5 minutes.
+              OTP sent to <b>+91 {masked}</b>. Valid for 1 minute.
             </p>
             {err && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{err}</p>}
             <div className="mt-4 space-y-3">

@@ -200,7 +200,7 @@ export default function CheckoutPage() {
                   </div>
                 ) : (
                   <div className="mt-4 space-y-3">
-                    <p className="text-sm text-stone-500">OTP sent to <b>+91 {otpMasked}</b>. Valid for 5 minutes.</p>
+                    <p className="text-sm text-stone-500">OTP sent to <b>+91 {otpMasked}</b>. Valid for 1 minute.</p>
                     <div><p className="label">6-digit OTP</p><input value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))} type="tel" className="input text-center text-xl font-bold tracking-[0.4em]" placeholder="——————" maxLength={6} autoFocus /></div>
                     <button onClick={verifyOtp} disabled={otpCode.length !== 6} className="btn-primary w-full disabled:opacity-60">Verify OTP & Continue</button>
                     <div className="flex items-center justify-between text-sm">

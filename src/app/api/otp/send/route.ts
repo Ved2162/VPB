@@ -54,7 +54,7 @@ export async function POST(req: Request) {
     // Generate OTP and hash it
     const otp = generateOtp();
     const otpHash = await bcrypt.hash(otp, 10);
-    const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes
+    const expiresAt = new Date(Date.now() + 1 * 60 * 1000); // 1 minute (matches SMS text)
 
     // Store hash (never plaintext)
     await db.insert(otpRequests).values({ phone, otpHash, expiresAt });
@@ -65,7 +65,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "SMS service not configured" }, { status: 500 });
     }
 
-    const smsUrl = `https://sms.renflair.in/V1.php?API=${apiKey}&PHONE=${phone}&OTP=${otp}`;
+        const msgText = encodeURIComponent(`Your VPB signup OTP is ${otp} . Valid for 1 minutes . Do not share with anyone . -VPB`);
+    const smsUrl = `https://sms.renflair.in/V1.php?API=${apiKey}&PHONE=${phone}&OTP=${otp}&MESSAGE=${msgText}`;
     let smsOk = false;
     try {
       const smsRes = await fetch(smsUrl, { signal: AbortSignal.timeout(8000) });
