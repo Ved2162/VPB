@@ -12,7 +12,7 @@ export default function Contact() {
     ["Is the manjha pure cotton?", "Yes — 100% pure cotton, no nylon mix. Every reel is batch-tested."],
     ["Which cord should I buy?", "6 cord for daily flying, 9 cord for tournaments, 12/16 for big kites and strong winds."],
     ["Do you offer COD?", "No, we currently accept UPI and Card payments only via Razorpay's secure checkout."],
-    ["What if my reel underperforms?", "All sales are final — we do not offer returns or replacements. Please check cord count and quantity before ordering."],
+    ["How long does delivery take?", "We dispatch within 24 hours. Delivery takes 4–6 working days across India. Live tracking is provided once shipped."],
   ];
   const [open, setOpen] = useState(0);
   return (

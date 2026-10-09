@@ -155,7 +155,7 @@ export default async function Home() {
         <section className="rounded-[26px] border border-[#ecdcb9] bg-white p-6 sm:p-10">
           <SectionHead kicker="Why VPB" title="Why Flyers Choose VPB" />
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[[ShieldCheck, "Pure Cotton Only", "No nylon mix. Lab-consistent cotton base on every reel."], [BadgeCheck, "Tested Every 500m", "Tension, coating and sharpness checked before packing."], [Truck, "Fast, Safe Shipping", "Vacuum-packed reels, shipped in 24h, delivered in 4–6 days."], [Quote, "No Return / No Replace", "All sales are final. Please check cord count and quantity carefully before ordering."]].map(([Icon, t, s]: any) => (
+            {[[ShieldCheck, "Pure Cotton Only", "No nylon mix. Lab-consistent cotton base on every reel."], [BadgeCheck, "Tested Every 500m", "Tension, coating and sharpness checked before packing."], [Truck, "Fast, Safe Shipping", "Vacuum-packed reels, shipped in 24h, delivered in 4–6 days."], [Quote, "WhatsApp Support", "Questions about your order? Reach us on WhatsApp anytime — +91 97273 28905."]].map(([Icon, t, s]: any) => (
               <div key={t} className="reveal rounded-2xl bg-[#fffaf0] p-6 text-center ring-1 ring-[#ecdcb9]">
                 <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#7a1f1f] text-[#f5d67b]"><Icon size={20} /></span>
                 <p className="mt-3 font-serif text-lg font-bold">{t}</p><p className="mt-1 text-sm text-stone-500">{s}</p>
@@ -204,7 +204,6 @@ export default async function Home() {
               <li>• 4–6 working days across India</li>
               <li>• FREE shipping above ₹6000 • Flat ₹200 OFF above ₹6000</li>
               <li>• Live tracking with courier + tracking number</li>
-              <li>• <b>No return. No replacement.</b> Please verify your order before checkout.</li>
             </ul>
             <Link href="/shop" className="btn-ghost mt-5 !text-[13px]">Start Shopping</Link>
           </div>
