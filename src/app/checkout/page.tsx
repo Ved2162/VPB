@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Check, Lock, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
@@ -22,9 +22,13 @@ export default function CheckoutPage() {
   const [pay, setPay] = useState("upi");
   const [placing, setPlacing] = useState(false);
   const [order, setOrder] = useState<any>(null);
-  const [loginF, setLoginF] = useState({ phone: "", password: "" });
-  const [regF, setRegF] = useState({ name: "", phone: "", password: "" });
-  const [mode, setMode] = useState<"login" | "register">("login");
+  // OTP auth state for checkout Step 1
+  const [otpName, setOtpName] = useState("");
+  const [otpPhone, setOtpPhone] = useState("");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpStep, setOtpStep] = useState<"phone" | "otp">("phone");
+  const [otpMasked, setOtpMasked] = useState("");
+  const [otpCooldown, setOtpCooldown] = useState(0);
   const [err, setErr] = useState("");
 
   const discount = subtotal >= 6000 ? 200 : 0;
@@ -50,14 +54,32 @@ export default function CheckoutPage() {
     }
   }, [me]);
 
-  const doLogin = async (isReg: boolean) => {
+  // OTP cooldown timer
+  const otpTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (otpCooldown > 0) {
+      otpTimerRef.current = setInterval(() => setOtpCooldown((c) => c <= 1 ? (clearInterval(otpTimerRef.current!), 0) : c - 1), 1000);
+    }
+    return () => { if (otpTimerRef.current) clearInterval(otpTimerRef.current); };
+  }, [otpCooldown]);
+
+  const sendOtp = async () => {
     setErr("");
-    const body = isReg ? { action: "register", ...regF } : { action: "login", ...loginF };
-    const r = await fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body), credentials: "include" });
+    if (!otpPhone.trim()) { setErr("Enter your mobile number"); return; }
+    const r = await fetch("/api/otp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: otpPhone }) });
     const j = await r.json();
-    if (!j.ok) { setErr(j.error); return; }
+    if (!j.ok) { if (j.cooldown) setOtpCooldown(j.cooldown); setErr(j.error); return; }
+    setOtpMasked(j.masked); setOtpStep("otp"); setOtpCooldown(60); toast("OTP sent!");
+  };
+
+  const verifyOtp = async () => {
+    setErr("");
+    if (otpCode.length !== 6) { setErr("Enter the 6-digit OTP"); return; }
+    const r = await fetch("/api/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ phone: otpPhone, otp: otpCode, name: otpName.trim() }) });
+    const j = await r.json();
+    if (!j.ok) { if (j.needName && !otpName.trim()) { setErr("Enter your name"); setOtpStep("phone"); return; } setErr(j.error); return; }
     await refresh();
-    toast("Welcome" + (isReg ? ", account created!" : " back!"));
+    toast("Welcome" + (j.isNew ? " to VPB!" : " back, " + j.user.name.split(" ")[0] + "!"));
     setStep(1);
   };
 
@@ -162,23 +184,29 @@ export default function CheckoutPage() {
             {step === 0 && (
               <div className="card p-6">
                 <h3 className="font-serif text-xl font-bold">Step 1 — Account</h3>
-                <p className="mt-1 text-sm text-stone-500">Login or create an account. Your cart is saved.</p>
-                <div className="mt-4 flex gap-2">
-                  {(["login", "register"] as const).map((m) => (<button key={m} onClick={() => setMode(m)} className={`rounded-full px-5 py-2 text-sm font-bold capitalize ${mode === m ? "bg-[#7a1f1f] text-white" : "bg-[#f3e6cc]"}`}>{m}</button>))}
-                </div>
+                <p className="mt-1 text-sm text-stone-500">Enter your mobile number to receive an OTP. Your cart is saved.</p>
                 {err && <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">{err}</p>}
-                {mode === "login" ? (
+                {otpStep === "phone" ? (
                   <div className="mt-4 space-y-3">
-                    <div><p className="label">Mobile Number</p><input value={loginF.phone} onChange={(e) => setLoginF({ ...loginF, phone: e.target.value })} type="tel" className="input" placeholder="97273 28905" maxLength={15} /></div>
-                    <div><p className="label">Password</p><input value={loginF.password} onChange={(e) => setLoginF({ ...loginF, password: e.target.value })} type="password" className="input" placeholder="••••••" /></div>
-                    <button onClick={() => doLogin(false)} className="btn-primary w-full">Login & Continue</button>
+                    <div><p className="label">Full Name <span className="font-normal text-stone-400">(for new accounts)</span></p><input value={otpName} onChange={(e) => setOtpName(e.target.value)} className="input" placeholder="Your name" /></div>
+                    <div>
+                      <p className="label">Mobile Number</p>
+                      <div className="flex gap-2">
+                        <span className="flex items-center rounded-xl border border-[#e7d6b8] bg-[#f6f0e8] px-3 text-sm font-bold text-stone-600">+91</span>
+                        <input value={otpPhone} onChange={(e) => setOtpPhone(e.target.value.replace(/\D/g, "").slice(0, 10))} type="tel" className="input flex-1" placeholder="9876543210" maxLength={10} />
+                      </div>
+                    </div>
+                    <button onClick={sendOtp} disabled={otpCooldown > 0} className="btn-primary w-full disabled:opacity-60">{otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Send OTP"}</button>
                   </div>
                 ) : (
                   <div className="mt-4 space-y-3">
-                    <div><p className="label">Full Name</p><input value={regF.name} onChange={(e) => setRegF({ ...regF, name: e.target.value })} className="input" placeholder="Your name" /></div>
-                    <div><p className="label">Mobile Number</p><input value={regF.phone} onChange={(e) => setRegF({ ...regF, phone: e.target.value })} type="tel" className="input" placeholder="97273 28905" maxLength={15} /></div>
-                    <div><p className="label">Password (min 6)</p><input value={regF.password} onChange={(e) => setRegF({ ...regF, password: e.target.value })} type="password" className="input" /></div>
-                    <button onClick={() => doLogin(true)} className="btn-primary w-full">Register & Continue</button>
+                    <p className="text-sm text-stone-500">OTP sent to <b>+91 {otpMasked}</b>. Valid for 5 minutes.</p>
+                    <div><p className="label">6-digit OTP</p><input value={otpCode} onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, "").slice(0, 6))} type="tel" className="input text-center text-xl font-bold tracking-[0.4em]" placeholder="——————" maxLength={6} autoFocus /></div>
+                    <button onClick={verifyOtp} disabled={otpCode.length !== 6} className="btn-primary w-full disabled:opacity-60">Verify OTP & Continue</button>
+                    <div className="flex items-center justify-between text-sm">
+                      <button onClick={() => { setOtpStep("phone"); setOtpCode(""); setErr(""); }} className="text-stone-500 hover:text-[#7a1f1f]">← Change number</button>
+                      <button onClick={() => { setOtpCode(""); setErr(""); sendOtp(); }} disabled={otpCooldown > 0} className="font-bold text-[#7a1f1f] disabled:text-stone-400">{otpCooldown > 0 ? `Resend in ${otpCooldown}s` : "Resend OTP"}</button>
+                    </div>
                   </div>
                 )}
               </div>

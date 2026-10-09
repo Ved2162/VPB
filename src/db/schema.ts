@@ -136,3 +136,18 @@ export const siteContent = pgTable("site_content", {
   value: text("value"),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+export const otpRequests = pgTable("otp_requests", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  // Normalised 10-digit phone (no country code stored — added at send time)
+  phone: varchar("phone", { length: 20 }).notNull(),
+  // bcrypt hash of the 6-digit OTP — never store plaintext
+  otpHash: text("otp_hash").notNull(),
+  // Hard expiry: 5 minutes from creation
+  expiresAt: timestamp("expires_at").notNull(),
+  // How many wrong guesses on this token
+  attempts: integer("attempts").default(0).notNull(),
+  // True once successfully verified (single-use)
+  consumed: boolean("consumed").default(false).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
