@@ -81,7 +81,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
   }), [lines]);
 
   return (
-    <AuthCtx.Provider value={{ me, loading, refresh, logout, setUser: setMe }}>
+    <AuthCtx.Provider value={{ me, loading, refresh, logout, setUser: (u) => { setMe(u); setLoading(false); } }}>
       <CartCtx.Provider value={{ lines, add, setQty, remove, clear, open, setOpen, count, subtotal, lastAdded }}>
         <ToastCtx.Provider value={{ toast }}>
           {children}

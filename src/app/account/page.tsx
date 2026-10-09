@@ -31,8 +31,8 @@ export default function AccountPage() {
     }
   }, [me, loading, router]);
 
-  if (loading) return <div className="mx-auto max-w-5xl px-4 py-10"><div className="skel h-40" /></div>;
-  if (!me) return null;
+  // Show skeleton while loading OR while me resolves from cookie after navigation
+  if (loading || !me) return <div className="mx-auto max-w-5xl px-4 py-10 space-y-4"><div className="skel h-16 rounded-2xl" /><div className="skel h-64 rounded-2xl" /></div>;
 
   const saveProfile = async () => {
     setBusy(true);

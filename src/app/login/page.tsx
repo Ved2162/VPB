@@ -85,11 +85,13 @@ function LoginForm() {
       setErr(j.error);
       return;
     }
-    // Directly update auth context — avoids race between Set-Cookie and next fetch
+    // Set user in context immediately so account page renders without waiting
     setUser({ id: j.user.id, name: j.user.name, phone: j.user.phone, role: j.user.role });
     toast("Welcome" + (j.isNew ? " to VPB!" : " back, " + j.user.name.split(" ")[0] + "!"));
     const back = searchParams.get("back") || localStorage.getItem("vpb_back") || "";
     localStorage.removeItem("vpb_back");
+    // Small delay so the cookie is committed before navigation
+    await new Promise((r) => setTimeout(r, 100));
     router.replace(back || "/account");
   };
 
