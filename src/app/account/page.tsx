@@ -18,7 +18,7 @@ export default function AccountPage() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    if (!loading && !me) { localStorage.setItem("vpb_back", "/account"); router.push("/login"); }
+    if (!loading && !me) { router.replace("/login?back=/account"); }
     if (me) {
       setProfile({ name: me.name || "" });
       fetch("/api/orders", { credentials: "include" }).then((r) => r.json()).then((j) => setOrders(j.orders || [])).catch(() => {});

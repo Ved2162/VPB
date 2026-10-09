@@ -1,17 +1,29 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth, useToast } from "@/lib/store";
 
-export default function LoginPage() {
+function LoginForm() {
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
-  const { refresh } = useAuth();
+  const { me, loading, refresh } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // Redirect away if already authenticated
+  useEffect(() => {
+    if (!loading && me) {
+      const back = searchParams.get("back") || localStorage.getItem("vpb_back") || "";
+      localStorage.removeItem("vpb_back");
+      router.replace(back || (me.role === "admin" ? "/admin" : "/account"));
+    }
+  }, [me, loading, router, searchParams]);
+
+  if (loading || me) return <div className="mx-auto max-w-md px-4 py-12"><div className="skel h-64 rounded-[22px]" /></div>;
 
   const submit = async () => {
     setErr(""); setBusy(true);
@@ -26,12 +38,9 @@ export default function LoginPage() {
     if (!j.ok) { setErr(j.error); return; }
     await refresh();
     toast("Welcome back, " + j.user.name.split(" ")[0] + "!");
-    if (j.user.role === "admin") router.push("/admin");
-    else {
-      const back = localStorage.getItem("vpb_back");
-      localStorage.removeItem("vpb_back");
-      router.push(back || "/account");
-    }
+    const back = searchParams.get("back") || localStorage.getItem("vpb_back") || "";
+    localStorage.removeItem("vpb_back");
+    router.replace(back || (j.user.role === "admin" ? "/admin" : "/account"));
   };
 
   return (
@@ -44,25 +53,11 @@ export default function LoginPage() {
         <div className="mt-4 space-y-3">
           <div>
             <p className="label">Mobile Number</p>
-            <input
-              value={phone}
-              onChange={(e) => setPhone(e.target.value)}
-              type="tel"
-              className="input"
-              placeholder="97273 28905"
-              maxLength={15}
-            />
+            <input value={phone} onChange={(e) => setPhone(e.target.value)} type="tel" className="input" placeholder="97273 28905" maxLength={15} autoFocus />
           </div>
           <div>
             <p className="label">Password</p>
-            <input
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              type="password"
-              className="input"
-              onKeyDown={(e) => e.key === "Enter" && submit()}
-              placeholder="••••••"
-            />
+            <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" className="input" onKeyDown={(e) => e.key === "Enter" && submit()} placeholder="••••••" />
           </div>
           <button onClick={submit} disabled={busy} className="btn-primary w-full disabled:opacity-60">
             {busy ? "Logging in…" : "Login"}
@@ -75,4 +70,8 @@ export default function LoginPage() {
       </div>
     </div>
   );
+}
+
+export default function LoginPage() {
+  return <Suspense fallback={<div className="mx-auto max-w-md px-4 py-12"><div className="skel h-64 rounded-[22px]" /></div>}><LoginForm /></Suspense>;
 }

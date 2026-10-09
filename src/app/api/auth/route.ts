@@ -5,7 +5,13 @@ import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword, signToken, getUserFromHeader, COOKIE } from "@/lib/auth";
 
 function setCookie(res: NextResponse, token: string) {
-  res.cookies.set(COOKIE, token, { httpOnly: true, path: "/", maxAge: 60 * 60 * 24 * 14, sameSite: "lax" });
+  res.cookies.set(COOKIE, token, {
+    httpOnly: true,
+    path: "/",
+    maxAge: 60 * 60 * 24 * 14,   // 14 days
+    sameSite: "lax",
+    secure: process.env.NODE_ENV === "production",
+  });
 }
 
 // Normalise phone: strip spaces, dashes, brackets; keep leading + if present
@@ -23,7 +29,23 @@ export async function GET(req: Request) {
   const rows = await db.select().from(users).where(eq(users.id, u.id));
   if (!rows.length || !rows[0].active) return NextResponse.json({ ok: true, user: null });
   const { passwordHash: _p, ...safe } = rows[0] as any;
-  return NextResponse.json({ ok: true, user: safe });
+  const res = NextResponse.json({ ok: true, user: safe });
+
+  // Sliding window: re-issue cookie if token expires in less than 7 days
+  const cookie = req.headers.get("cookie") || "";
+  const m = cookie.match(/vpb_token=([^;]+)/);
+  if (m) {
+    try {
+      const payload = JSON.parse(Buffer.from(m[1].split(".")[1], "base64").toString());
+      const sevenDays = 7 * 24 * 60 * 60;
+      if (payload.exp && payload.exp - Math.floor(Date.now() / 1000) < sevenDays) {
+        const fresh = signToken({ id: rows[0].id, name: rows[0].name, phone: rows[0].phone!, role: rows[0].role });
+        setCookie(res, fresh);
+      }
+    } catch { /* ignore malformed token — verifyToken already validated */ }
+  }
+
+  return res;
 }
 
 export async function POST(req: Request) {
