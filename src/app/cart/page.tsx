@@ -1,5 +1,8 @@
 "use client";
-import Link from "next/link";
+import { useApiResource } from "@/lib/use-api-resource";
+import { SectionLoader, LoadingError } from "@/components/loading";
+import { apiFetch } from "@/lib/api-client";
+import { BrandedLink as Link } from "@/components/loading";
 import { Minus, Plus, Trash2, ArrowRight, ShoppingBag } from "lucide-react";
 import { useCart } from "@/lib/store";
 import { money } from "@/lib/data";
@@ -7,11 +10,10 @@ import { ProductCard, SafeImg } from "@/components/site";
 import { useEffect, useState } from "react";
 
 export default function CartPage() {
-  const { lines, setQty, remove, subtotal, clear } = useCart();
-  const [recs, setRecs] = useState<any[]>([]);
-  useEffect(() => {
-    fetch("/api/products?tag=bestseller&limit=4").then((r) => r.json()).then((j) => setRecs(j.products || [])).catch(() => {});
-  }, []);
+  const { lines, setQty, remove, subtotal, clear, ready } = useCart();
+  const recommendations = useApiResource<{ products: any[] }>('/api/products?tag=bestseller&limit=4');
+  const recs = recommendations.data?.products || [];
+  if (!ready) return <SectionLoader label="Preparing your cart…" />;
   const discount = subtotal >= 6000 ? 200 : 0;
   const ship = subtotal === 0 ? 0 : subtotal - discount >= 6000 ? 0 : 99;
 
@@ -22,7 +24,7 @@ export default function CartPage() {
         <h1 className="mt-4 font-serif text-3xl font-bold">Your cart is empty</h1>
         <p className="mt-2 text-stone-500">Tournament-grade manjha is waiting. Go pick your reel.</p>
         <Link href="/shop" className="btn-primary mt-6">Shop Collection <ArrowRight size={16} /></Link>
-        {recs.length > 0 && <div className="mt-12 text-left"><h3 className="font-serif text-xl font-bold">Bestsellers to start with</h3><div className="mt-4 grid grid-cols-2 gap-4">{recs.map((p) => (<ProductCard key={p.id} p={p} />))}</div></div>}
+        <SectionLoader active={recommendations.pending} label="Loading recommendations…" compact />{recommendations.error && <LoadingError error={recommendations.error} retry={recommendations.refresh} />}{recs.length > 0 && <div className="mt-12 text-left"><h3 className="font-serif text-xl font-bold">Bestsellers to start with</h3><div className="mt-4 grid grid-cols-2 gap-4">{recs.map((p) => (<ProductCard key={p.id} p={p} />))}</div></div>}
       </div>
     );
 

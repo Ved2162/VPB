@@ -14,6 +14,6 @@ export async function GET(_: Request, { params }: { params: Promise<{ slug: stri
     const rel = prod.categoryId ? await db.select().from(products).where(eq(products.categoryId, prod.categoryId)) : [];
     return NextResponse.json({ ok: true, product: prod, reviews: revs, related: rel.filter((x) => x.id !== prod.id && x.active).slice(0, 4) });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Unable to complete this request. Please retry." }, { status: 500 });
   }
 }

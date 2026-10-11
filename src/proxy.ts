@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
+import { verifyToken } from "@/lib/auth";
+import { sameOrigin } from "@/lib/shipment-rules";
 
 // Routes that require login
 const PROTECTED = ["/account", "/checkout"];
@@ -8,39 +10,31 @@ const ADMIN_ROUTES = ["/admin"];
 // Routes that redirect away when already logged in
 const AUTH_ROUTES = ["/login", "/register"];
 
-// Lightweight JWT payload decode — NO signature verification here.
-// Security: the actual verification still happens in every API route
-// via getUserFromHeader() → verifyToken() (full Node.js jsonwebtoken).
-// Middleware only needs to know if a token cookie EXISTS and what role
-// it claims, so we can redirect before the page renders. The server
-// routes re-verify and reject any tampered token before touching data.
-function decodeJwtPayload(token: string): { role?: string; exp?: number } | null {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return null;
-    // Base64url → Base64
-    const b64 = parts[1].replace(/-/g, "+").replace(/_/g, "/");
-    const json = atob(b64);
-    const payload = JSON.parse(json);
-    // Check expiry
-    if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) return null;
-    return payload;
-  } catch {
-    return null;
-  }
-}
-
-export function middleware(req: NextRequest) {
+export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  if (pathname.startsWith('/api/')) {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
+      try {
+        if (pathname !== '/api/payment/webhook') sameOrigin(req);
+        if (Number(req.headers.get('content-length') || 0) > 65536) return NextResponse.json({ ok: false, error: 'Request too large' }, { status: 413 });
+      } catch { return NextResponse.json({ ok: false, error: 'Cross-origin request rejected' }, { status: 403 }); }
+    }
+    const res = NextResponse.next(); res.headers.set('Cache-Control', 'no-store'); return res;
+  }
   const token = req.cookies.get("vpb_token")?.value;
-  const payload = token ? decodeJwtPayload(token) : null;
+  const payload = token ? verifyToken(token) : null;
   const isLoggedIn = !!payload;
   const isAdmin = payload?.role === "admin";
+  const isDelivery = payload?.role === 'delivery';
+
+  if ((pathname === '/delivery' || pathname.startsWith('/delivery/')) && pathname !== '/delivery/login' && !isAdmin && !isDelivery) {
+    return NextResponse.redirect(new URL('/delivery/login', req.url));
+  }
 
   // --- Redirect logged-in users away from /login and /register ---
   if (AUTH_ROUTES.some((r) => pathname === r || pathname.startsWith(r + "/"))) {
     if (isLoggedIn) {
-      return NextResponse.redirect(new URL(isAdmin ? "/admin" : "/account", req.url));
+      return NextResponse.redirect(new URL(isAdmin ? "/admin" : isDelivery ? '/delivery' : "/account", req.url));
     }
     return NextResponse.next();
   }
@@ -73,10 +67,12 @@ export function middleware(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/api/:path*",
     "/login",
     "/register",
     "/account/:path*",
     "/checkout/:path*",
     "/admin/:path*",
+    "/delivery/:path*",
   ],
 };

@@ -4,6 +4,7 @@ import "./globals.css";
 import { Providers } from "@/lib/store";
 import { Navbar, Footer, CartDrawer, RevealInit } from "@/components/site";
 import RazorpayLoader from "@/lib/razorpay-client";
+import { RequestActivity } from '@/components/loading';
 
 export const metadata: Metadata = {
   title: "VPB — Verai Patang Bhandar | Premium Bareilly Manjha & Kites",
@@ -12,11 +13,12 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" data-scroll-behavior="smooth">
       <body className="min-h-screen">
         <Providers>
           <RevealInit />
           <Navbar />
+          <RequestActivity />
           <CartDrawer />
           <RazorpayLoader />
           <main className="min-h-[60vh]">{children}</main>

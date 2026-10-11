@@ -21,6 +21,10 @@ A full-stack e-commerce web application for **VPB — Verai Patang Bhandar**, a 
 
 ## Features
 
+- Restricted delivery staff panel, manual courier tracking, shipment history, and admin-managed courier providers. See [Delivery operations and testing](docs/delivery.md).
+- Branded kite loading, OTP feedback, and bounded API loading. See [Loading behavior](docs/loading.md).
+- Security hardening and release setup are documented in [Security and production setup](docs/security.md). Review the deployment checklist before publishing.
+
 - Product catalog with categories, search, filtering, and sorting
 - Product detail pages with image gallery, reviews, and pincode delivery check
 - Shopping cart (localStorage-based, persisted across sessions)

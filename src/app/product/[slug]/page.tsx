@@ -1,6 +1,10 @@
 "use client";
+import { useApiResource } from "@/lib/use-api-resource";
+import { SectionLoader, ProductSkeleton, ButtonLoader, LoadingError } from "@/components/loading";
+import { apiFetch } from "@/lib/api-client";
+import { useRouter } from "next/navigation";
 import { use, useEffect, useState } from "react";
-import Link from "next/link";
+import { BrandedLink as Link } from "@/components/loading";
 import { Minus, Plus, ShoppingBag, Zap, Truck, ShieldCheck, MapPin, BadgeCheck } from "lucide-react";
 import { ProductCard, Stars, WishlistBtn, SafeImg } from "@/components/site";
 import { useCart, useToast, useAuth } from "@/lib/store";
@@ -8,34 +12,26 @@ import { money } from "@/lib/data";
 
 export default function ProductPage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = use(params);
-  const [data, setData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const router = useRouter();
   const [img, setImg] = useState(0);
   const [qty, setQty] = useState(1);
   const [pin, setPin] = useState("");
   const [pinMsg, setPinMsg] = useState("");
   const [zoom, setZoom] = useState(false);
+  const [pinBusy, setPinBusy] = useState(false);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const { add } = useCart();
   const { toast } = useToast();
   const { me } = useAuth();
   const [revForm, setRevForm] = useState({ rating: 5, title: "", review: "" });
 
-  const load = async () => {
-    setLoading(true); setError("");
-    try {
-      const r = await fetch("/api/products/" + slug);
-      const j = await r.json();
-      if (!j.ok) throw new Error(j.error || "Product not found");
-      setData(j);
-    } catch (e: any) { setError(e.message); }
-    setLoading(false);
-  };
-  useEffect(() => { load(); // eslint-disable-next-line
-  }, [slug]);
-
-  if (loading) return <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6"><div className="grid gap-8 lg:grid-cols-2"><div className="skel aspect-square" /><div className="space-y-3"><div className="skel h-8 w-3/4" /><div className="skel h-5 w-1/2" /><div className="skel h-12 w-full" /></div></div></div>;
-  if (error || !data?.product) return <div className="mx-auto max-w-2xl px-4 py-20 text-center"><p className="font-serif text-2xl font-bold">Product not found</p><p className="text-stone-500">{error}</p><div className="mt-4 flex justify-center gap-2"><button onClick={load} className="btn-ghost">Retry</button><Link href="/shop" className="btn-primary">Back to Shop</Link></div></div>;
+  const product = useApiResource<any>('/api/products/' + slug);
+  const data = product.data;
+  const loading = product.pending;
+  const error = product.error;
+  const load = product.refresh;
+  if (loading && !data) return <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6"><SectionLoader label="Loading product details…" /><ProductSkeleton detail /></div>;
+  if (!data?.product) return <div className="mx-auto max-w-2xl px-4 py-20 text-center"><p className="font-serif text-2xl font-bold">Product not found</p><p className="text-stone-500">{error}</p><div className="mt-4 flex justify-center gap-2"><button onClick={load} className="btn-ghost">Retry</button><Link href="/shop" className="btn-primary">Back to Shop</Link></div></div>;
 
   const p = data.product;
   const images = p.images?.length ? p.images : [""];
@@ -43,22 +39,31 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   const off = p.comparePrice > p.price ? Math.round((1 - p.price / p.comparePrice) * 100) : 0;
 
   const checkPin = async () => {
+    if (pinBusy) return;
+    setPinBusy(true);
+    try {
     setPinMsg("");
-    const r = await fetch("/api/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ res: "pincode", pincode: pin }) });
+    const r = await apiFetch("/api/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ res: "pincode", pincode: pin }) });
     const j = await r.json();
     setPinMsg(j.ok ? `✓ ${j.eta} to ${pin} • Shipping ${j.charge === 0 ? "FREE" : "₹" + j.charge}` : "✕ " + j.error);
+    } finally { setPinBusy(false); }
   };
 
   const submitReview = async () => {
     if (!me) { toast("Login to write a review"); return; }
-    const r = await fetch("/api/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ res: "review", productId: p.id, ...revForm }) });
+    if (reviewBusy) return;
+    setReviewBusy(true);
+    try {
+    const r = await apiFetch("/api/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ res: "review", productId: p.id, ...revForm }) });
     const j = await r.json();
     if (j.ok) { toast("Review submitted. Thank you!"); setRevForm({ rating: 5, title: "", review: "" }); load(); }
     else toast(j.error || "Failed");
+    } finally { setReviewBusy(false); }
   };
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-32 pt-8 sm:px-6 lg:pb-10">
+    <div className="mx-auto max-w-7xl px-4 pb-32 pt-8 sm:px-6 lg:pb-10" aria-busy={loading}><SectionLoader active={loading} label="Refreshing product details…" compact />
+      {error && <LoadingError error={error} retry={load} />}
       <p className="text-[13px] text-stone-500"><Link href="/" className="hover:text-[#7a1f1f]">Home</Link> / <Link href="/shop" className="hover:text-[#7a1f1f]">Shop</Link> / <span className="font-semibold text-[#2b140d]">{p.name}</span></p>
       <div className="mt-5 grid gap-10 lg:grid-cols-2">
         <div>
@@ -98,13 +103,13 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
           </div>
           <div className="mt-4 grid gap-2.5 sm:grid-cols-2">
             <button disabled={out} onClick={() => { add({ id: p.id, slug: p.slug, name: p.name, price: p.price, comparePrice: p.comparePrice, image: images[0], stock: p.stockQuantity }, qty); toast(`${p.name} added to cart`); }} className="btn-ghost !border-2 !border-[#7a1f1f] !py-3.5 disabled:opacity-40"><ShoppingBag size={17} /> Add to Cart</button>
-            <button disabled={out} onClick={() => { add({ id: p.id, slug: p.slug, name: p.name, price: p.price, comparePrice: p.comparePrice, image: images[0], stock: p.stockQuantity }, qty); window.location.href = "/checkout"; }} className="btn-primary !py-3.5 disabled:opacity-40"><Zap size={17} /> Buy Now</button>
+            <button disabled={out} onClick={() => { add({ id: p.id, slug: p.slug, name: p.name, price: p.price, comparePrice: p.comparePrice, image: images[0], stock: p.stockQuantity }, qty); router.push("/checkout"); }} className="btn-primary !py-3.5 disabled:opacity-40"><Zap size={17} /> Buy Now</button>
           </div>
           <div className="card mt-5 p-4">
             <p className="label"><MapPin size={13} className="mr-1 inline" /> Delivery / Pincode Checker</p>
             <div className="flex gap-2">
               <input value={pin} onChange={(e) => setPin(e.target.value)} placeholder="e.g. 243001" maxLength={6} className="input" />
-              <button onClick={checkPin} className="btn-ghost shrink-0 !py-2 text-[13px]">Check</button>
+              <button onClick={checkPin} disabled={pinBusy} className="btn-ghost shrink-0 !py-2 text-[13px]">{pinBusy ? <ButtonLoader label="Checking…" /> : "Check"}</button>
             </div>
             {pinMsg && <p className="mt-2 text-sm font-semibold">{pinMsg}</p>}
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-[13px] text-stone-500">
@@ -142,7 +147,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
           <div className="mt-1 flex gap-1">{[1, 2, 3, 4, 5].map((i) => (<button key={i} onClick={() => setRevForm({ ...revForm, rating: i })} className={`text-2xl ${i <= revForm.rating ? "text-[#c9a24b]" : "text-stone-300"}`}>★</button>))}</div>
           <p className="label mt-3">Title</p><input value={revForm.title} onChange={(e) => setRevForm({ ...revForm, title: e.target.value })} className="input" placeholder="Sharp & smooth!" />
           <p className="label mt-3">Review</p><textarea value={revForm.review} onChange={(e) => setRevForm({ ...revForm, review: e.target.value })} className="input min-h-24" placeholder="How was the pench?" />
-          <button onClick={submitReview} className="btn-primary mt-3 w-full">Submit Review</button>
+          <button onClick={submitReview} disabled={reviewBusy} className="btn-primary mt-3 w-full">{reviewBusy ? <ButtonLoader label="Submitting…" /> : "Submit Review"}</button>
         </div>
       </div>
 
@@ -162,7 +167,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
         <div className="flex items-center gap-2">
           <div className="min-w-0 flex-1"><p className="truncate text-[13px] font-bold">{p.name}</p><p className="font-serif text-lg font-black text-[#7a1f1f]">{money(p.price)}</p></div>
           <button disabled={out} onClick={() => { add({ id: p.id, slug: p.slug, name: p.name, price: p.price, comparePrice: p.comparePrice, image: images[0], stock: p.stockQuantity }, qty); toast("Added to cart"); }} className="btn-ghost !px-4 !py-2.5 text-[13px]">Add</button>
-          <button disabled={out} onClick={() => { add({ id: p.id, slug: p.slug, name: p.name, price: p.price, comparePrice: p.comparePrice, image: images[0], stock: p.stockQuantity }, qty); window.location.href = "/checkout"; }} className="btn-primary !px-5 !py-2.5 text-[13px]">Buy Now</button>
+          <button disabled={out} onClick={() => { add({ id: p.id, slug: p.slug, name: p.name, price: p.price, comparePrice: p.comparePrice, image: images[0], stock: p.stockQuantity }, qty); router.push("/checkout"); }} className="btn-primary !px-5 !py-2.5 text-[13px]">Buy Now</button>
         </div>
       </div>
     </div>

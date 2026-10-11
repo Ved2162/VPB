@@ -1,11 +1,17 @@
 "use client";
+import { ButtonLoader } from "@/components/loading";
+import { SectionLoader } from "@/components/loading";
+import { apiFetch } from "@/lib/api-client";
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { PackageCheck, Truck, Check } from "lucide-react";
 import { money, ORDER_STEPS, ORDER_LABEL } from "@/lib/data";
 import { SafeImg } from "@/components/site";
+import { ShipmentTimeline } from "@/components/shipment-timeline";
+import { useAuth } from "@/lib/store";
 
 function TrackInner() {
+  const { loading: checkingAccount } = useAuth();
   const sp = useSearchParams();
   const [num, setNum] = useState(sp.get("num") || "");
   const [order, setOrder] = useState<any>(null);
@@ -13,11 +19,13 @@ function TrackInner() {
   const [busy, setBusy] = useState(false);
 
   const track = async () => {
-    setErr(""); setOrder(null);
+    if (busy || checkingAccount) return;
+    setErr("");
+    if (order?.orderNumber !== num.trim()) setOrder(null);
     if (!num.trim()) { setErr("Enter order number (e.g. VPB-2026-XXXX)"); return; }
     setBusy(true);
     try {
-      const r = await fetch("/api/orders/" + encodeURIComponent(num.trim()));
+      const r = await apiFetch("/api/orders/" + encodeURIComponent(num.trim()));
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || "Order not found");
       setOrder(j.order);
@@ -33,10 +41,11 @@ function TrackInner() {
       <h1 className="mt-1 text-center font-serif text-3xl font-bold">Track Your Order</h1>
       <div className="card mt-6 flex gap-2 p-3">
         <input value={num} onChange={(e) => setNum(e.target.value)} onKeyDown={(e) => e.key === "Enter" && track()} placeholder="Enter order number — VPB-2026-XXXX" className="input !border-0 !bg-transparent" />
-        <button onClick={track} disabled={busy} className="btn-primary shrink-0 disabled:opacity-60">{busy ? "Tracking…" : "Track"}</button>
+        <button onClick={track} disabled={busy || checkingAccount} className="btn-primary shrink-0 disabled:opacity-60">{busy ? <ButtonLoader label="Tracking…" /> : "Track"}</button>
       </div>
       {err && <p className="mt-3 rounded-xl bg-red-50 px-4 py-2.5 text-center text-sm font-semibold text-red-700">{err} — check the number on your confirmation screen or account page.</p>}
 
+      <SectionLoader active={busy} label="Loading order tracking…" compact={!!order} />
       {order && (
         <div className="card mt-6 p-6 sm:p-8">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -45,6 +54,7 @@ function TrackInner() {
             <span className="pill bg-[#fff4de] text-[#7a5b1e] !text-[13px] !px-4 !py-1.5">{ORDER_LABEL[order.orderStatus] || order.orderStatus}</span>
           </div>
 
+          {order.shipment && <ShipmentTimeline shipment={order.shipment} />}
           <div className="relative mt-8 pl-1">
             <div className="track-line" />
             <div className="space-y-5">
@@ -89,5 +99,5 @@ function TrackInner() {
   );
 }
 export default function TrackPage() {
-  return <Suspense fallback={<div className="p-10 text-center">Loading…</div>}><TrackInner /></Suspense>;
+  return <Suspense fallback={<SectionLoader label="Loading order tracking…" />}><TrackInner /></Suspense>;
 }

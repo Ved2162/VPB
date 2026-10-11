@@ -69,6 +69,9 @@ desktop.ini
 # Testing & Coverage
 # ======================
 coverage/
+test-results/
+playwright-report/
+.next-e2e/
 .nyc_output/
 *.lcov
 
@@ -95,3 +98,12 @@ drizzle/
 # Vercel
 # ======================
 .vercel
+
+# Local security-audit scratch files (may contain private diagnostics)
+.audit-local/
+docs/*audit*.local.md
+audit-dependencies.json
+audit-production.json
+lint-baseline.json
+.env.*
+!.env.example

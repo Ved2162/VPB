@@ -1,6 +1,10 @@
 "use client";
+import { OtpAnimation, ButtonLoader, useApiActivity } from "@/components/loading";
+import { SectionLoader } from "@/components/loading";
+import { safeReturnPath } from "@/lib/http-security";
+import { apiFetch } from "@/lib/api-client";
 import { useEffect, useState, useRef, Suspense } from "react";
-import Link from "next/link";
+import { BrandedLink as Link } from "@/components/loading";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth, useToast } from "@/lib/store";
 
@@ -15,6 +19,8 @@ function LoginForm() {
   const [masked, setMasked] = useState("");
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const sending = useApiActivity("/api/otp/send");
   const [cooldown, setCooldown] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -28,7 +34,7 @@ function LoginForm() {
     if (!loading && me) {
       const back = searchParams.get("back") || localStorage.getItem("vpb_back") || "";
       localStorage.removeItem("vpb_back");
-      router.replace(back || (me.role === "admin" ? "/admin" : "/account"));
+      router.replace(safeReturnPath(back, me.role === "admin" ? "/admin" : me.role === "delivery" ? "/delivery" : "/account"));
     }
   }, [me, loading, router, searchParams]);
 
@@ -40,13 +46,15 @@ function LoginForm() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [cooldown]);
 
-  if (loading || me) return <div className="mx-auto max-w-md px-4 py-12"><div className="skel h-64 rounded-[22px]" /></div>;
+  if (verified) return <div className="mx-auto max-w-md px-4 py-12"><OtpAnimation state="verified" digits={6} /><SectionLoader label="Opening your account" /></div>;
+  if (loading || me) return <SectionLoader label="Checking your account…" />;
 
   const sendOtp = async () => {
+    if (busy) return;
     setErr("");
     if (!phone.trim()) { setErr("Enter your mobile number"); return; }
     setBusy(true);
-    const r = await fetch("/api/otp/send", {
+    const r = await apiFetch("/api/otp/send", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ phone }),
@@ -65,10 +73,11 @@ function LoginForm() {
   };
 
   const verifyOtp = async () => {
+    if (busy) return;
     setErr("");
     if (otp.length !== 6) { setErr("Enter the 6-digit OTP"); return; }
     setBusy(true);
-    const r = await fetch("/api/otp/verify", {
+    const r = await apiFetch("/api/otp/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -85,12 +94,13 @@ function LoginForm() {
       setErr(j.error);
       return;
     }
+    setVerified(true);
     // Set user in context immediately
     setUser({ id: j.user.id, name: j.user.name, phone: j.user.phone, role: j.user.role });
     toast("Welcome" + (j.isNew ? " to VPB!" : " back, " + j.user.name.split(" ")[0] + "!"));
     const back = searchParams.get("back") || localStorage.getItem("vpb_back") || "";
     localStorage.removeItem("vpb_back");
-    const dest = back || "/account";
+    const dest = safeReturnPath(back);
     // Use full page navigation so the browser commits the httpOnly cookie
     // before the next request hits the middleware. router.replace() is a
     // client-side navigation that sends no new request, so the cookie from
@@ -101,6 +111,7 @@ function LoginForm() {
   return (
     <div className="mx-auto max-w-md px-4 py-12">
       <div className="card p-7">
+        <OtpAnimation state={busy ? sending ? "sending" : "verifying" : err ? "error" : "waiting"} digits={otp.length} />
         <p className="text-[12px] font-bold uppercase tracking-[0.28em] text-[#7a1f1f]">
           {step === "phone" ? "Welcome to VPB" : "Verify OTP"}
         </p>
@@ -144,7 +155,7 @@ function LoginForm() {
                 disabled={busy || cooldown > 0}
                 className="btn-primary w-full disabled:opacity-60"
               >
-                {busy ? "Sending OTP…" : cooldown > 0 ? `Resend in ${cooldown}s` : "Send OTP"}
+                {busy ? <ButtonLoader label="Sending OTP…" /> : cooldown > 0 ? `Resend in ${cooldown}s` : "Send OTP"}
               </button>
             </div>
           </>
@@ -158,6 +169,7 @@ function LoginForm() {
               <div>
                 <p className="label">Enter 6-digit OTP</p>
                 <input
+                  aria-label="6-digit OTP"
                   value={otp}
                   onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
                   type="tel"
@@ -173,7 +185,7 @@ function LoginForm() {
                 disabled={busy || otp.length !== 6}
                 className="btn-primary w-full disabled:opacity-60"
               >
-                {busy ? "Verifying…" : "Verify OTP"}
+                {busy ? <ButtonLoader label="Verifying…" /> : "Verify OTP"}
               </button>
               <div className="flex items-center justify-between text-sm">
                 <button

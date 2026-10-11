@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BrandedLink as Link } from "@/components/loading";
 import { ArrowRight, AtSign, ShieldCheck, Star, Truck, BadgeCheck, Quote } from "lucide-react";
 import { ProductCard, SectionHead, TrustBar, Stars, CtaBand, SafeImg } from "@/components/site";
 import { HERO_VIDEO, HERO_POSTER, GALLERY, CRAFT_IMAGES, INSTAGRAM_URL } from "@/lib/data";
@@ -193,7 +193,7 @@ export default async function Home() {
           <div className="reveal rounded-[22px] bg-[#7a1f1f] p-8 text-[#f7ead7] sm:p-10">
             <ShieldCheck size={30} className="text-[#f5d67b]" />
             <h3 className="mt-3 font-serif text-2xl font-bold">100% Authentic. Every Reel.</h3>
-            <p className="mt-2 text-sm leading-relaxed text-[#f0d9a8]">Look for the VPB seal, batch number and karigar stamp on every reel. Scan it on the track-order page to verify genuineness. Duplicates can't copy our finish.</p>
+            <p className="mt-2 text-sm leading-relaxed text-[#f0d9a8]">Look for the VPB seal, batch number and karigar stamp on every reel. Scan it on the track-order page to verify genuineness. Duplicates can&apos;t copy our finish.</p>
             <Link href="/track-order" className="btn-gold mt-5 !text-[13px]">Verify / Track Order</Link>
           </div>
           <div className="reveal rounded-[22px] border border-[#ecdcb9] bg-white p-8 sm:p-10">

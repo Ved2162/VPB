@@ -9,9 +9,15 @@ function getPool(): Pool {
     throw new Error("DATABASE_URL environment variable is required");
   }
   const isNeon = databaseUrl.includes("neon.tech");
+  const connection = new URL(databaseUrl);
+  if (isNeon || ['require', 'prefer'].includes(connection.searchParams.get('sslmode') || '')) connection.searchParams.set('sslmode', 'verify-full');
   return new Pool({
-    connectionString: databaseUrl,
-    ssl: isNeon ? { rejectUnauthorized: false } : false,
+    connectionString: connection.toString(),
+    ssl: isNeon ? { rejectUnauthorized: true } : undefined,
+    connectionTimeoutMillis: 10000,
+    query_timeout: 20000,
+    idleTimeoutMillis: 60000,
+    max: 10,
   });
 }
 

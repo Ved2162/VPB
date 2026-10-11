@@ -1,4 +1,7 @@
 "use client";
+import { apiFetch } from "@/lib/api-client";
+import { useApiResource } from "@/lib/use-api-resource";
+import { SectionLoader, ProductSkeleton, LoadingError } from "@/components/loading";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Search, SlidersHorizontal, X } from "lucide-react";
@@ -7,10 +10,6 @@ import { ProductCard } from "@/components/site";
 function ShopInner() {
   const sp = useSearchParams();
   const router = useRouter();
-  const [products, setProducts] = useState<any[]>([]);
-  const [cats, setCats] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [q, setQ] = useState(sp.get("q") || "");
   const [cat, setCat] = useState(sp.get("cat") || "");
   const [cord, setCord] = useState(sp.get("cord") || "");
@@ -21,42 +20,29 @@ function ShopInner() {
   const [drawer, setDrawer] = useState(false);
   const [sugg, setSugg] = useState<any[]>([]);
 
-  useEffect(() => {
-    fetch("/api/categories").then((r) => r.json()).then((j) => setCats(j.categories || [])).catch(() => {});
-  }, []);
-
-  const fetchProducts = async () => {
-    setLoading(true); setError("");
-    try {
-      const p = new URLSearchParams();
-      if (q) p.set("q", q);
-      if (cat) p.set("cat", cat);
-      if (cord) p.set("cord", cord);
-      if (sort) p.set("sort", sort);
-      if (tag) p.set("tag", tag);
-      if (avail) p.set("avail", avail);
-      if (maxP) p.set("max", maxP);
-      const r = await fetch("/api/products?" + p.toString());
-      const j = await r.json();
-      if (!j.ok) throw new Error(j.error || "Failed to load");
-      setProducts(j.products);
-    } catch (e: any) { setError(e.message); }
-    setLoading(false);
+  const [appliedQ, setAppliedQ] = useState(q);
+  const [appliedPrice, setAppliedPrice] = useState('');
+  const query = new URLSearchParams({ q: appliedQ, cat, cord, sort, tag, avail, max: appliedPrice }).toString();
+  const catalog = useApiResource<{ products: any[] }>('/api/products?' + query);
+  const categories = useApiResource<{ categories: any[] }>('/api/categories');
+  const products = (catalog.data || catalog.previous)?.products || [];
+  const cats = categories.data?.categories || [];
+  const loading = catalog.pending;
+  const error = catalog.error;
+  const fetchProducts = () => {
+    if (q !== appliedQ || maxP !== appliedPrice) { setAppliedQ(q); setAppliedPrice(maxP); }
+    else catalog.refresh();
   };
-
-  useEffect(() => { fetchProducts(); // eslint-disable-next-line
-  }, [cat, cord, sort, tag, avail]);
-
   useEffect(() => {
-    const t = setTimeout(() => {
-      if (q.trim().length >= 2) {
-        fetch("/api/products?q=" + encodeURIComponent(q) + "&limit=5").then((r) => r.json()).then((j) => setSugg(j.products || [])).catch(() => {});
-      } else setSugg([]);
+    const controller = new AbortController();
+    const timer = setTimeout(() => {
+      if (q.trim().length < 2) { setSugg([]); return; }
+      apiFetch('/api/products?q=' + encodeURIComponent(q) + '&limit=5', { signal: controller.signal }).then(r => r.json()).then(j => { if (!controller.signal.aborted) setSugg(j.products || []); }).catch(() => {});
     }, 300);
-    return () => clearTimeout(t);
+    return () => { clearTimeout(timer); controller.abort(); };
   }, [q]);
 
-  const clearAll = () => { setQ(""); setCat(""); setCord(""); setTag(""); setAvail(""); setMaxP(""); setSort("featured"); router.push("/shop"); };
+  const clearAll = () => { setQ(""); setCat(""); setCord(""); setTag(""); setAvail(""); setMaxP(""); setAppliedQ(""); setAppliedPrice(""); setSort("featured"); router.push("/shop"); };
 
   const filters = (
     <div className="space-y-6">
@@ -118,7 +104,7 @@ function ShopInner() {
         {sugg.length > 0 && (
           <div className="absolute inset-x-0 top-full z-30 mt-2 overflow-hidden rounded-2xl border border-[#ecdcb9] bg-white shadow-2xl">
             {sugg.map((s) => (
-              <button key={s.id} onClick={() => (window.location.href = "/product/" + s.slug)} className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-[#fff4de]">
+              <button key={s.id} onClick={() => (router.push("/product/" + s.slug))} className="flex w-full items-center justify-between px-4 py-2.5 text-left text-sm hover:bg-[#fff4de]">
                 <span><b>{s.name}</b> <span className="text-stone-400">• {s.brand}</span></span><span className="font-bold text-[#7a1f1f]">₹{s.price.toLocaleString("en-IN")}</span>
               </button>
             ))}
@@ -139,12 +125,14 @@ function ShopInner() {
       </div>
 
       <div className="mt-6 grid gap-8 lg:grid-cols-[240px_1fr]">
-        <aside className="hidden lg:block"><div className="card sticky top-28 p-5">{filters}</div></aside>
-        <div>
-          {loading ? (
-            <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">{[1, 2, 3, 4, 5, 6].map((i) => (<div key={i} className="skel aspect-[4/5]" />))}</div>
-          ) : error ? (
-            <div className="card p-10 text-center"><p className="font-serif text-xl font-bold">Couldn't load products</p><p className="mt-1 text-sm text-stone-500">{error}</p><button onClick={fetchProducts} className="btn-primary mt-4">Retry</button></div>
+        <aside className="hidden lg:block"><div className="card sticky top-28 p-5">{categories.error && <LoadingError error={categories.error} retry={categories.refresh} />}{filters}</div></aside>
+        <div aria-busy={loading}>
+          <SectionLoader active={loading} label="Loading products…" compact={!!products.length} />
+          {error && <LoadingError error={error} retry={catalog.refresh} />}
+          {loading && !products.length ? (
+            <ProductSkeleton />
+          ) : error && !products.length ? (
+            <div className="card p-10 text-center"><p className="font-serif text-xl font-bold">Couldn&apos;t load products</p><p className="mt-1 text-sm text-stone-500">{error}</p><button onClick={fetchProducts} className="btn-primary mt-4">Retry</button></div>
           ) : products.length === 0 ? (
             <div className="card p-10 text-center"><p className="font-serif text-xl font-bold">No products found</p><p className="mt-1 text-sm text-stone-500">Try a different search or clear filters.</p><button onClick={clearAll} className="btn-primary mt-4">Clear Filters</button></div>
           ) : (
@@ -164,5 +152,7 @@ function ShopInner() {
 }
 
 export default function ShopPage() {
-  return <Suspense fallback={<div className="p-10 text-center">Loading shop…</div>}><ShopInner /></Suspense>;
+  return <Suspense fallback={<SectionLoader label="Loading shop…" />}><ShopRoute /></Suspense>;
 }
+
+function ShopRoute() { const params = useSearchParams(); return <ShopInner key={params.toString()} />; }

@@ -6,8 +6,8 @@ import { cookies } from "next/headers";
 // so Next.js production build does not require the env var to be present.
 function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error("JWT_SECRET environment variable is required");
+  if (!secret || secret.length < 32) {
+    throw new Error("JWT_SECRET must contain at least 32 characters");
   }
   return secret;
 }
@@ -27,7 +27,9 @@ export function signToken(user: SessionUser) {
 }
 export function verifyToken(token: string): SessionUser | null {
   try {
-    return jwt.verify(token, getJwtSecret()) as SessionUser;
+    const user = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
+    if (typeof user === 'string' || typeof user.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(user.id) || !['admin', 'delivery', 'customer'].includes(user.role) || typeof user.name !== 'string' || typeof user.phone !== 'string') return null;
+    return user as SessionUser;
   } catch {
     return null;
   }

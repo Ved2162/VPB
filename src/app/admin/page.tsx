@@ -1,6 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { ButtonLoader } from "@/components/loading";
+import { useApiActivity, SectionLoader, TableSkeleton } from "@/components/loading";
+import { apiFetch } from "@/lib/api-client";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { BrandedLink as Link } from "@/components/loading";
 import { LayoutDashboard, Package, Tags, ShoppingCart, Users, Megaphone, LogOut, Plus, Trash2, Pencil, Eye } from "lucide-react";
 import { useAuth, useToast } from "@/lib/store";
 import { money } from "@/lib/data";
@@ -25,52 +29,64 @@ export default function Admin() {
   const [selOrder, setSelOrder] = useState<any>(null);
   const [busy, setBusy] = useState(false);
   const [loadError, setLoadError] = useState("");
+  const dataBusy = useApiActivity("/api/admin");
+  const [loaded, setLoaded] = useState<Record<string, boolean>>({});
+  const loadRequest = useRef<AbortController | null>(null);
+  useEffect(() => () => loadRequest.current?.abort(), []);
 
   useEffect(() => {
     if (!loading && (!me || me.role !== "admin")) router.push("/admin/login");
   }, [me, loading, router]);
 
-  const load = async (t = tab, query = q) => {
-    setLoadError("");
-    try {
-      const qs = (extra: string) => fetch("/api/admin?res=" + extra + (query ? "&q=" + encodeURIComponent(query) : ""), { credentials: "include" }).then((r) => r.json());
-      if (t === "dash") { const j = await qs("stats"); if (j.ok) setStats(j); else throw new Error(j.error || "Failed"); }
-      if (t === "products") { const j = await qs("products"); if (j.ok) setProducts(j.products); const c = await qs("categories"); if (c.ok) setCats(c.categories); }
-      if (t === "cats") { const c = await qs("categories"); if (c.ok) setCats(c.categories); }
-      if (t === "orders") { const j = await qs("orders"); if (j.ok) setOrders(j.orders); else throw new Error(j.error || "Failed"); }
-      if (t === "customers") { const j = await qs("customers"); if (j.ok) setCustomers(j.customers); }
-      if (t === "content") { const j = await qs("content"); if (j.ok) setContent(j); }
-    } catch (e: any) {
-      setLoadError(e?.message || "Unable to load. Check your connection.");
-    }
-  };
-  useEffect(() => { if (me?.role === "admin") { load().catch(() => setLoadError("Unable to load data.")); } // eslint-disable-next-line
-  }, [tab, me]);
+  const loadData = useCallback((t: string, query: string) => {
+    loadRequest.current?.abort();
+    const controller = new AbortController(); loadRequest.current = controller;
 
-  if (loading) return <div className="p-10">Loading admin…</div>;
+    const qs = (extra: string) => apiFetch("/api/admin?res=" + extra + (query ? "&q=" + encodeURIComponent(query) : ""), { credentials: "include", signal: controller.signal }).then(async (r) => { const j = await r.json(); if (!r.ok || !j.ok) throw new Error(j.error || "Unable to load dashboard"); if (controller.signal.aborted) throw new DOMException("Cancelled", "AbortError"); setLoadError(""); return j; });
+      const resource: Record<string, string> = { dash: 'stats', products: 'products', cats: 'categories', orders: 'orders', customers: 'customers', content: 'content' };
+    return qs(resource[t] || 'stats').then(async j => {
+      if (t === 'dash') setStats(j);
+      if (t === 'products') { setProducts(j.products); const categories = await qs('categories'); setCats(categories.categories); }
+      if (t === 'cats') setCats(j.categories);
+      if (t === 'orders') setOrders(j.orders);
+      if (t === 'customers') setCustomers(j.customers);
+      if (t === 'content') setContent(j);
+      if (!controller.signal.aborted) setLoaded(previous => ({ ...previous, [t]: true }));
+    }).catch((e: Error) => {
+      if (!controller.signal.aborted) setLoadError(e?.message || "Unable to load. Check your connection.");
+    });
+  }, []);
+  const load = (t = tab, query = q) => loadData(t, query);
+  useEffect(() => { if (me?.role === "admin") void loadData(tab, ""); }, [tab, me, loadData]);
+
+  if (loading) return <SectionLoader label="Checking admin access…" />;
   if (!me || me.role !== "admin") return null;
 
   const saveProduct = async () => {
+    if (busy) return;
     if (!editP?.name || !editP?.price || !editP?.sku) { toast("Name, price, SKU required"); return; }
     setBusy(true);
-    const r = await fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "product", id: editP.id || undefined, data: { ...editP, images: typeof editP.images === "string" ? editP.images.split("\n").map((s: string) => s.trim()).filter(Boolean) : editP.images } }) });
+    const r = await apiFetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "product", id: editP.id || undefined, data: { ...editP, images: typeof editP.images === "string" ? editP.images.split("\n").map((s: string) => s.trim()).filter(Boolean) : editP.images } }) });
     const j = await r.json(); setBusy(false);
     if (j.ok) { toast("Product saved — live on site"); setShowP(false); setEditP(null); load(); } else toast(j.error || "Failed");
   };
 
   const saveCat = async () => {
+    if (busy) return;
     if (!editC?.name) { toast("Name required"); return; }
-    const r = await fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "category", id: editC.id || undefined, data: editC }) });
+    setBusy(true);
+    const r = await apiFetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "category", id: editC.id || undefined, data: editC }) });
     const j = await r.json();
+    setBusy(false);
     if (j.ok) { toast("Category saved"); setShowC(false); setEditC(null); load(); } else toast(j.error || "Failed");
   };
 
   const updateOrder = async (patch: any) => {
-    const r = await fetch("/api/orders/" + selOrder.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(patch) });
+    const r = await apiFetch("/api/orders/" + selOrder.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(patch) });
     const j = await r.json();
     if (j.ok) {
       toast("Order updated — customer tracking reflects it");
-      const fresh = await fetch("/api/admin?res=order&id=" + selOrder.id, { credentials: "include" }).then((x) => x.json());
+      const fresh = await apiFetch("/api/admin?res=order&id=" + selOrder.id, { credentials: "include" }).then((x) => x.json());
       if (fresh.ok) setSelOrder(fresh.order);
       load("orders");
     } else toast(j.error || "Failed");
@@ -89,11 +105,14 @@ export default function Admin() {
       </div>
 
       <div className="mt-5 flex gap-2 overflow-x-auto no-scrollbar">
+        <Link href="/admin/delivery" className="flex shrink-0 items-center rounded-full bg-[#7a1f1f] px-4 py-2.5 text-[13px] font-bold text-white">Staff & couriers</Link>
         {tabs.map(([k, Icon, l]: any) => (
           <button key={k} onClick={() => setTab(k)} className={`flex shrink-0 items-center gap-2 rounded-full px-4 py-2.5 text-[13px] font-bold ${tab === k ? "bg-[#1c0f0a] text-[#f0d9a8]" : "bg-white ring-1 ring-[#e7d6b8]"}`}><Icon size={15} />{l}</button>
         ))}
       </div>
 
+      <SectionLoader active={dataBusy} label="Loading dashboard data…" compact={!!loaded[tab]} />
+      {dataBusy && !loaded[tab] && <TableSkeleton />}
       {loadError && (
         <div className="mt-4 flex items-center gap-3 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
           <span className="flex-1 font-semibold">{loadError}</span>
@@ -125,7 +144,7 @@ export default function Admin() {
         </div>
       )}
 
-      {tab === "products" && (
+      {tab === "products" && (!dataBusy || loaded[tab]) && (
         <div className="mt-6">
           <div className="flex flex-wrap gap-2">
             <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Search products…" className="input !w-64" />
@@ -144,7 +163,7 @@ export default function Admin() {
                   <td className="text-xs">{p.featured ? "★Feat " : ""}{p.bestseller ? "🔥Best" : ""}{!p.active ? " ⏸Hidden" : ""}</td>
                   <td><span className="flex gap-1.5">
                     <button onClick={() => { setEditP({ ...p, images: (p.images || []).join("\n") }); setShowP(true); }} className="rounded-lg bg-[#f3e6cc] p-2 hover:bg-[#e7d6b8]"><Pencil size={14} /></button>
-                    <button onClick={async () => { if (!confirm("Delete " + p.name + "?")) return; await fetch("/api/admin?res=product&id=" + p.id, { method: "DELETE", credentials: "include" }); toast("Deleted"); load(); }} className="rounded-lg bg-red-50 p-2 text-red-700 hover:bg-red-100"><Trash2 size={14} /></button>
+                    <button onClick={async () => { if (!confirm("Delete " + p.name + "?")) return; await apiFetch("/api/admin?res=product&id=" + p.id, { method: "DELETE", credentials: "include" }); toast("Deleted"); load(); }} className="rounded-lg bg-red-50 p-2 text-red-700 hover:bg-red-100"><Trash2 size={14} /></button>
                   </span></td>
                 </tr>
               ))}</tbody>
@@ -153,7 +172,7 @@ export default function Admin() {
         </div>
       )}
 
-      {tab === "cats" && (
+      {tab === "cats" && (!dataBusy || loaded[tab]) && (
         <div className="mt-6">
           <button onClick={() => { setEditC({ name: "", slug: "", description: "", image: "" }); setShowC(true); }} className="btn-primary !py-2 text-[13px]"><Plus size={15} /> Add Category</button>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -163,7 +182,7 @@ export default function Admin() {
                 <div className="min-w-0 flex-1"><b>{c.name}</b><p className="truncate text-xs text-stone-400">/{c.slug} {c.active ? "" : "• Hidden"}</p>
                   <div className="mt-1.5 flex gap-1.5">
                     <button onClick={() => { setEditC(c); setShowC(true); }} className="rounded-lg bg-[#f3e6cc] px-2.5 py-1 text-xs font-bold">Edit</button>
-                    <button onClick={async () => { if (!confirm("Delete category?")) return; await fetch("/api/admin?res=category&id=" + c.id, { method: "DELETE", credentials: "include" }); toast("Deleted"); load(); }} className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">Delete</button>
+                    <button onClick={async () => { if (!confirm("Delete category?")) return; await apiFetch("/api/admin?res=category&id=" + c.id, { method: "DELETE", credentials: "include" }); toast("Deleted"); load(); }} className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">Delete</button>
                   </div></div>
               </div>
             ))}
@@ -171,7 +190,7 @@ export default function Admin() {
         </div>
       )}
 
-      {tab === "orders" && (
+      {tab === "orders" && (!dataBusy || loaded[tab]) && (
         <div className="mt-6">
           <div className="flex gap-2"><input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Search order no, name, phone…" className="input !w-72" /><button onClick={() => load()} className="btn-ghost !py-2 text-[13px]">Search</button></div>
           <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_380px]">
@@ -179,7 +198,7 @@ export default function Admin() {
               <table className="admin-table min-w-[640px]">
                 <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead>
                 <tbody>{orders.map((o) => (
-                  <tr key={o.id} onClick={async () => { try { const j = await fetch("/api/admin?res=order&id=" + o.id, { credentials: "include" }).then((r) => r.json()); if (j.ok) setSelOrder(j.order); else toast(j.error || "Failed to open order"); } catch { toast("Network error"); } }} className="cursor-pointer hover:bg-[#fff9ec]">
+                  <tr key={o.id} onClick={async () => { try { const j = await apiFetch("/api/admin?res=order&id=" + o.id, { credentials: "include" }).then((r) => r.json()); if (j.ok) setSelOrder(j.order); else toast(j.error || "Failed to open order"); } catch { toast("Network error"); } }} className="cursor-pointer hover:bg-[#fff9ec]">
                     <td><b>{o.orderNumber}</b><br /><span className="text-xs text-stone-400">{new Date(o.createdAt).toLocaleDateString("en-IN")}</span></td>
                     <td>{o.customerName}<br /><span className="text-xs text-stone-400">{o.customerPhone}</span></td>
                     <td><b>{money(o.total)}</b><br /><span className="text-xs text-stone-400">{o.paymentStatus}</span></td>
@@ -209,11 +228,8 @@ export default function Admin() {
                   <select value={selOrder.paymentStatus} onChange={(e) => setSelOrder({ ...selOrder, paymentStatus: e.target.value })} className="input">
                     {["pending", "paid", "failed", "refunded"].map((s) => (<option key={s} value={s}>{s}</option>))}
                   </select>
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div><p className="label">Courier</p><input value={selOrder.courier || ""} onChange={(e) => setSelOrder({ ...selOrder, courier: e.target.value })} className="input" /></div>
-                    <div><p className="label">Tracking No</p><input value={selOrder.trackingNumber || ""} onChange={(e) => setSelOrder({ ...selOrder, trackingNumber: e.target.value })} className="input" /></div>
-                  </div>
-                  <button onClick={() => updateOrder({ orderStatus: selOrder.orderStatus, paymentStatus: selOrder.paymentStatus, courier: selOrder.courier, trackingNumber: selOrder.trackingNumber })} className="btn-primary mt-4 w-full">Save Changes</button>
+                  <Link href="/admin/delivery" className="mt-3 block text-sm font-bold text-[#7a1f1f] underline">Manage delivery staff & courier providers</Link>
+                  <button onClick={() => updateOrder({ orderStatus: selOrder.orderStatus, paymentStatus: selOrder.paymentStatus })} className="btn-primary mt-4 w-full">Save Changes</button>
                 </div>
               )}
             </div>
@@ -221,7 +237,7 @@ export default function Admin() {
         </div>
       )}
 
-      {tab === "customers" && (
+      {tab === "customers" && (!dataBusy || loaded[tab]) && (
         <div className="mt-6">
           <div className="flex gap-2"><input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Search customers…" className="input !w-64" /><button onClick={() => load()} className="btn-ghost !py-2 text-[13px]">Search</button></div>
           <div className="card mt-4 overflow-x-auto">
@@ -232,7 +248,7 @@ export default function Admin() {
                   <td><b>{c.name}</b><br /><span className="text-xs text-stone-400">{c.email} • {c.phone} • {c.role}</span></td>
                   <td>{c.orders}</td><td><b>{money(c.spent)}</b></td>
                   <td><span className={`pill ${c.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>{c.active ? "Active" : "Disabled"}</span></td>
-                  <td>{c.role !== "admin" && <button onClick={async () => { await fetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "customer-toggle", id: c.id, active: !c.active }) }); toast("Updated"); load(); }} className="rounded-lg bg-[#f3e6cc] px-3 py-1.5 text-xs font-bold">{c.active ? "Disable" : "Enable"}</button>}</td>
+                  <td>{c.role !== "admin" && <button onClick={async () => { await apiFetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "customer-toggle", id: c.id, active: !c.active }) }); toast("Updated"); load(); }} className="rounded-lg bg-[#f3e6cc] px-3 py-1.5 text-xs font-bold">{c.active ? "Disable" : "Enable"}</button>}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -240,11 +256,11 @@ export default function Admin() {
         </div>
       )}
 
-      {tab === "content" && (
+      {tab === "content" && (!dataBusy || loaded[tab]) && (
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           <div className="card p-5">
             <p className="font-serif text-lg font-bold">Promotional Banners</p>
-            <div className="mt-3 space-y-2">{content.banners?.map((b: any) => (<div key={b.id} className="flex items-center gap-3 rounded-xl border border-[#ecdcb9] p-3 text-sm"><span className="relative h-12 w-20 shrink-0 overflow-hidden rounded-lg bg-[#f6ead2]"><SafeImg src={b.image} alt={b.title} sizes="80px" className="object-cover" /></span><span className="flex-1"><b>{b.title}</b><br /><span className="text-xs text-stone-400">{b.subtitle}</span></span><button onClick={async () => { await fetch("/api/admin?res=banner&id=" + b.id, { method: "DELETE", credentials: "include" }); toast("Deleted"); load(); }} className="text-red-600"><Trash2 size={15} /></button></div>))}</div>
+            <div className="mt-3 space-y-2">{content.banners?.map((b: any) => (<div key={b.id} className="flex items-center gap-3 rounded-xl border border-[#ecdcb9] p-3 text-sm"><span className="relative h-12 w-20 shrink-0 overflow-hidden rounded-lg bg-[#f6ead2]"><SafeImg src={b.image} alt={b.title} sizes="80px" className="object-cover" /></span><span className="flex-1"><b>{b.title}</b><br /><span className="text-xs text-stone-400">{b.subtitle}</span></span><button onClick={async () => { await apiFetch("/api/admin?res=banner&id=" + b.id, { method: "DELETE", credentials: "include" }); toast("Deleted"); load(); }} className="text-red-600"><Trash2 size={15} /></button></div>))}</div>
           </div>
           <div className="card p-5">
             <p className="font-serif text-lg font-bold">Site Content / Announcements</p>
@@ -275,7 +291,7 @@ export default function Admin() {
               <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={!!editP.bestseller} onChange={(e) => setEditP({ ...editP, bestseller: e.target.checked })} /> Bestseller</label>
               <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={editP.active !== false} onChange={(e) => setEditP({ ...editP, active: e.target.checked })} /> Active</label>
             </div>
-            <div className="mt-4 flex gap-2"><button onClick={() => { setShowP(false); setEditP(null); }} className="btn-ghost flex-1">Cancel</button><button onClick={saveProduct} disabled={busy} className="btn-primary flex-1 disabled:opacity-60">{busy ? "Saving…" : "Save Product"}</button></div>
+            <div className="mt-4 flex gap-2"><button onClick={() => { setShowP(false); setEditP(null); }} className="btn-ghost flex-1">Cancel</button><button onClick={saveProduct} disabled={busy} className="btn-primary flex-1 disabled:opacity-60">{busy ? <ButtonLoader label="Saving…" /> : "Save Product"}</button></div>
           </div>
         </div>
       )}
@@ -289,7 +305,7 @@ export default function Admin() {
             <p className="label mt-3">Description</p><input value={editC.description || ""} onChange={(e) => setEditC({ ...editC, description: e.target.value })} className="input" />
             <p className="label mt-3">Image URL</p><input value={editC.image || ""} onChange={(e) => setEditC({ ...editC, image: e.target.value })} className="input" />
             <label className="mt-3 flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={editC.active !== false} onChange={(e) => setEditC({ ...editC, active: e.target.checked })} /> Active</label>
-            <div className="mt-4 flex gap-2"><button onClick={() => { setShowC(false); setEditC(null); }} className="btn-ghost flex-1">Cancel</button><button onClick={saveCat} className="btn-primary flex-1">Save</button></div>
+            <div className="mt-4 flex gap-2"><button onClick={() => { setShowC(false); setEditC(null); }} className="btn-ghost flex-1">Cancel</button><button onClick={saveCat} disabled={busy} className="btn-primary flex-1">{busy ? <ButtonLoader label="Saving category…" /> : "Save"}</button></div>
           </div>
         </div>
       )}

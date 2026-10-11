@@ -1,8 +1,9 @@
 "use client";
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { BrandedLink as Link } from "@/components/loading";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { ShoppingBag, Search, Menu, X, User, Star, Plus, Minus, Trash2, AtSign, Phone, Mail, MapPin, Truck, ShieldCheck, BadgeCheck, ChevronRight, Heart, Eye, ArrowRight } from "lucide-react";
+import { localStore } from "@/lib/browser-state";
 import { useCart, useAuth, useToast } from "@/lib/store";
 import { money, INSTAGRAM_URL, PHONE_DISPLAY, WHATSAPP_URL, ADDRESS, ADDRESS_MAPS_URL } from "@/lib/data";
 
@@ -40,16 +41,17 @@ export function Navbar() {
   const { count, setOpen } = useCart();
   const { me } = useAuth();
   const [scrolled, setScrolled] = useState(false);
-  const [menu, setMenu] = useState(false);
+  const [menuState, setMenuState] = useState({ path: "", open: false });
   const [q, setQ] = useState("");
   const router = useRouter();
   const path = usePathname();
+  const menu = menuState.path === path && menuState.open;
+  const setMenu = (open: boolean) => setMenuState({ path, open });
   useEffect(() => {
     const f = () => setScrolled(window.scrollY > 24);
     f(); window.addEventListener("scroll", f, { passive: true });
     return () => window.removeEventListener("scroll", f);
   }, []);
-  useEffect(() => setMenu(false), [path]);
   const links = [["Shop", "/shop"], ["Categories", "/shop"], ["About VPB", "/about"], ["Craftsmanship", "/craftsmanship"], ["Contact", "/contact"]];
   return (
     <>
@@ -296,16 +298,17 @@ export function TrustBar() {
   );
 }
 
+const wishlistStore = localStore<string[]>("vpb_wish", [], (value): value is string[] => Array.isArray(value) && value.every(id => typeof id === 'string'));
 export function WishlistBtn({ id }: { id: string }) {
   const { toast } = useToast();
-  const [on, setOn] = useState(false);
-  useEffect(() => { try { setOn((JSON.parse(localStorage.getItem("vpb_wish") || "[]") as string[]).includes(id)); } catch {} }, [id]);
+  const wishlist = useSyncExternalStore(wishlistStore.subscribe, wishlistStore.snapshot, wishlistStore.serverSnapshot);
+  const on = wishlist.includes(id);
   return (
     <button aria-label="Wishlist" onClick={() => {
       try {
-        const cur: string[] = JSON.parse(localStorage.getItem("vpb_wish") || "[]");
+        const cur = wishlistStore.snapshot();
         const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-        localStorage.setItem("vpb_wish", JSON.stringify(next)); setOn(!on);
+        wishlistStore.update(next);
         toast(!on ? "Added to wishlist" : "Removed from wishlist");
       } catch {}
     }} className={`grid h-10 w-10 place-items-center rounded-full border transition ${on ? "border-[#7a1f1f] bg-[#7a1f1f] text-white" : "border-[#e7d6b8] bg-white text-[#3a2118]"}`}>

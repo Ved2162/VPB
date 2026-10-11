@@ -10,7 +10,19 @@ export function getRazorpay() {
   const keyId = getKeyId();
   const keySecret = getKeySecret();
   if (!keyId || !keySecret) return null;
-  return new Razorpay({ key_id: keyId, key_secret: keySecret });
+  const gateway = new Razorpay({ key_id: keyId, key_secret: keySecret });
+  // Razorpay 2.9 uses this Axios instance for its fixed-host API resources.
+  const api = gateway.api as unknown as { rq: { defaults: { timeout: number; maxRedirects: number } } };
+  api.rq.defaults.timeout = 8000;
+  api.rq.defaults.maxRedirects = 0;
+  return gateway;
+}
+
+export async function fetchGatewayPayment(paymentId: string) {
+  if (!/^pay_[A-Za-z0-9]+$/.test(paymentId)) throw new Error('Invalid payment ID');
+  const gateway = getRazorpay();
+  if (!gateway) throw new Error('Payment verification is temporarily unavailable');
+  return gateway.payments.fetch(paymentId);
 }
 
 export function verifyPaymentSignature(orderId: string, paymentId: string, signature: string) {

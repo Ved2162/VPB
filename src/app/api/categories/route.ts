@@ -11,6 +11,6 @@ export async function GET() {
     counts.forEach((c: any) => { if (c.categoryId) map[c.categoryId] = Number(c.n); });
     return NextResponse.json({ ok: true, categories: cats.map((c) => ({ ...c, count: map[c.id] || 0 })) });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message, categories: [] }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Unable to complete this request. Please retry.", categories: [] }, { status: 500 });
   }
 }

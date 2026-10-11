@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { BrandedLink as Link } from "@/components/loading";
 import { ArrowRight, AtSign } from "lucide-react";
 import { HERO_VIDEO_2, HERO_POSTER, INSTAGRAM_URL } from "@/lib/data";
 import { SafeImg } from "@/components/site";

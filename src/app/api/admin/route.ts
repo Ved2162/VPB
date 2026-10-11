@@ -1,30 +1,35 @@
+import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { products, categories, orders, orderItems, users, banners, siteContent } from "@/db/schema";
 import { eq, desc, sql, ilike, or } from "drizzle-orm";
 import { getUserFromHeader, slugify } from "@/lib/auth";
+import { sameOrigin, DeliveryError } from "@/lib/shipment-rules";
+import { activeUser, rateLimit, deliveryFailure } from "@/lib/delivery-server";
 
-function needAdmin(req: Request) {
-  const me = getUserFromHeader(req);
-  if (!me || me.role !== "admin") return null;
-  return me;
+async function needAdmin(req: Request) {
+  try { const me = await activeUser(req); return me.role === 'admin' ? me : null; }
+  catch { return null; }
 }
 
 export async function GET(req: Request) {
-  if (!needAdmin(req)) return NextResponse.json({ ok: false, error: "Admin only" }, { status: 403 });
+  if (!(await needAdmin(req))) return NextResponse.json({ ok: false, error: "Admin only" }, { status: 403 });
   const u = new URL(req.url);
   const res = u.searchParams.get("res") || "stats";
   const q = (u.searchParams.get("q") || "").trim();
   try {
     if (res === "stats") {
-      const pc = await db.select({ n: sql<number>`count(*)` }).from(products);
-      const oc = await db.select({ n: sql<number>`count(*)` }).from(orders);
-      const uc = await db.select({ n: sql<number>`count(*)` }).from(users);
-      const sales = await db.select({ t: sql<number>`coalesce(sum(total),0)` }).from(orders);
-      const low = await db.select().from(products).where(sql`stock_quantity <= 15`);
-      const recentOrders = await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(8);
-      const recentUsers = (await db.select().from(users).orderBy(desc(users.createdAt)).limit(6)).map(({ passwordHash: _, ...u }) => u);
-      const byStatus = await db.select({ s: orders.orderStatus, n: sql<number>`count(*)` }).from(orders).groupBy(orders.orderStatus);
+      const [pc, oc, uc, sales, low, recentOrders, userRows, byStatus] = await Promise.all([
+        db.select({ n: sql<number>`count(*)` }).from(products),
+        db.select({ n: sql<number>`count(*)` }).from(orders),
+        db.select({ n: sql<number>`count(*)` }).from(users),
+        db.select({ t: sql<number>`coalesce(sum(total),0)` }).from(orders),
+        db.select().from(products).where(sql`stock_quantity <= 15`),
+        db.select().from(orders).orderBy(desc(orders.createdAt)).limit(8),
+        db.select({ id: users.id, name: users.name, phone: users.phone, email: users.email, role: users.role, active: users.active, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt)).limit(6),
+        db.select({ s: orders.orderStatus, n: sql<number>`count(*)` }).from(orders).groupBy(orders.orderStatus),
+      ]);
+      const recentUsers = userRows;
       return NextResponse.json({ ok: true, stats: { products: Number(pc[0]?.n || 0), orders: Number(oc[0]?.n || 0), customers: Number(uc[0]?.n || 0), sales: Number(sales[0]?.t || 0), low: low.length, out: low.filter((p: any) => p.stockQuantity <= 0).length }, low, recentOrders, recentUsers, byStatus });
     }
     if (res === "products") {
@@ -63,18 +68,20 @@ export async function GET(req: Request) {
     }
     return NextResponse.json({ ok: false, error: "unknown" }, { status: 400 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return deliveryFailure(e);
   }
 }
 
 export async function POST(req: Request) {
-  if (!needAdmin(req)) return NextResponse.json({ ok: false, error: "Admin only" }, { status: 403 });
+  try { sameOrigin(req); } catch (error) { return deliveryFailure(error); }
+  if (!(await needAdmin(req))) return NextResponse.json({ ok: false, error: "Admin only" }, { status: 403 });
   try {
-    const body = await req.json();
+    const body = await readJson(req);
+    await rateLimit("admin-write:" + (await activeUser(req)).id, 90, 60);
     const res = body.res;
     if (res === "product") {
       const d = body.data;
-      if (!d.name || !d.price || !d.sku) return NextResponse.json({ ok: false, error: "Name, price, SKU required" }, { status: 400 });
+      if (!d || typeof d.name !== "string" || d.name.length > 200 || !Number.isSafeInteger(Number(d.price)) || Number(d.price) < 1 || !d.sku || !Number.isInteger(Number(d.stockQuantity ?? 10)) || Number(d.stockQuantity ?? 10) < 0) return NextResponse.json({ ok: false, error: "Name, price, SKU required" }, { status: 400 });
       const slug = d.slug || slugify(d.name);
       const images = Array.isArray(d.images) ? d.images.filter(Boolean) : d.image ? [d.image] : [];
       const payload: any = {
@@ -118,12 +125,13 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: false, error: "unknown" }, { status: 400 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return deliveryFailure(e);
   }
 }
 
 export async function DELETE(req: Request) {
-  if (!needAdmin(req)) return NextResponse.json({ ok: false, error: "Admin only" }, { status: 403 });
+  try { sameOrigin(req); } catch (error) { return deliveryFailure(error); }
+  if (!(await needAdmin(req))) return NextResponse.json({ ok: false, error: "Admin only" }, { status: 403 });
   const u = new URL(req.url);
   const res = u.searchParams.get("res");
   const id = u.searchParams.get("id") || "";
@@ -133,6 +141,6 @@ export async function DELETE(req: Request) {
     else if (res === "banner") await db.delete(banners).where(eq(banners.id, id));
     return NextResponse.json({ ok: true });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return deliveryFailure(e);
   }
 }

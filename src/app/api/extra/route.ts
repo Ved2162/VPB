@@ -1,16 +1,21 @@
+import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { addresses, reviews, products, users } from "@/db/schema";
 import { eq, desc } from "drizzle-orm";
-import { getUserFromHeader } from "@/lib/auth";
+import { activeUser, rateLimit, deliveryFailure } from '@/lib/delivery-server';
+import { sameOrigin, textField, DeliveryError } from '@/lib/shipment-rules';
+import { isUuid } from '@/lib/http-security';
 
 // ?res=addresses|reviews  — unified to save routes
 export async function GET(req: Request) {
   const u = new URL(req.url);
   const res = u.searchParams.get("res");
-  const me = getUserFromHeader(req);
+
   try {
     if (res === "addresses") {
+      const me = await activeUser(req);
+      if (me.role === "delivery") throw new DeliveryError("Customer access required", 403);
       if (!me) return NextResponse.json({ ok: false, error: "Login required" }, { status: 401 });
       const rows = await db.select().from(addresses).where(eq(addresses.userId, me.id)).orderBy(desc(addresses.createdAt));
       return NextResponse.json({ ok: true, addresses: rows });
@@ -24,17 +29,23 @@ export async function GET(req: Request) {
     }
     return NextResponse.json({ ok: false, error: "unknown res" }, { status: 400 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return deliveryFailure(e);
   }
 }
 
 export async function POST(req: Request) {
-  const body = await req.json();
-  const me = getUserFromHeader(req);
   try {
+    sameOrigin(req);
+    const body = await readJson(req);
     if (body.res === "address") {
+      const me = await activeUser(req);
+      if (me.role === "delivery") throw new DeliveryError("Customer access required", 403);
       if (!me) return NextResponse.json({ ok: false, error: "Login required" }, { status: 401 });
-      const { id, name, phone, addressLine, city, state, pincode, landmark, isDefault } = body;
+      const { id, isDefault } = body;
+      if (id && !isUuid(id)) throw new DeliveryError('Invalid address ID');
+      const name = textField(body.name, 'name', 120, true), phone = textField(body.phone, 'phone', 20, true), addressLine = textField(body.addressLine, 'address', 220, true), city = textField(body.city, 'city', 100, true), state = textField(body.state, 'state', 100, true), pincode = textField(body.pincode, 'pincode', 10, true), landmark = textField(body.landmark ?? '', 'landmark', 200);
+      if (!/^\d{6}$/.test(pincode) || !/^\+?[0-9]{7,15}$/.test(phone)) throw new DeliveryError('Invalid phone or pincode');
+      await rateLimit('address:' + me.id, 30, 60);
       if (!name || !phone || !addressLine || !city || !state || !pincode) return NextResponse.json({ ok: false, error: "All address fields required" }, { status: 400 });
       if (id) {
         // Ownership check for updates
@@ -49,9 +60,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true, address: ins[0] });
     }
     if (body.res === "review") {
+      const me = await activeUser(req);
+      if (me.role === "delivery") throw new DeliveryError("Customer access required", 403);
       if (!me) return NextResponse.json({ ok: false, error: "Login required to review" }, { status: 401 });
-      const { productId, rating, title, review } = body;
-      if (!productId || !rating) return NextResponse.json({ ok: false, error: "Rating required" }, { status: 400 });
+      const { productId, rating } = body;
+      const title = textField(body.title ?? '', 'title', 160), review = textField(body.review ?? '', 'review', 5000);
+      await rateLimit('review:' + me.id, 10, 3600);
+      if (!isUuid(productId) || !Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5) return NextResponse.json({ ok: false, error: "Rating required" }, { status: 400 });
       await db.insert(reviews).values({ userId: me.id, productId, rating: Number(rating), title: title || null, review: review || null });
       const pr = await db.select().from(products).where(eq(products.id, productId));
       if (pr.length) {
@@ -68,15 +83,20 @@ export async function POST(req: Request) {
     }
     return NextResponse.json({ ok: false, error: "unknown" }, { status: 400 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return deliveryFailure(e);
   }
 }
 
 export async function DELETE(req: Request) {
+  try {
+  sameOrigin(req);
   const u = new URL(req.url);
-  const me = getUserFromHeader(req);
-  if (!me) return NextResponse.json({ ok: false, error: "Login required" }, { status: 401 });
+
+  const me = await activeUser(req);
+      if (me.role === "delivery") throw new DeliveryError("Customer access required", 403);
+      if (!me) return NextResponse.json({ ok: false, error: "Login required" }, { status: 401 });
   const id = u.searchParams.get("id") || "";
+  if (!isUuid(id)) throw new DeliveryError("Invalid address ID");
   if (!id) return NextResponse.json({ ok: false, error: "Address ID required" }, { status: 400 });
   // Ownership check — only delete if the address belongs to this user
   const existing = await db.select().from(addresses).where(eq(addresses.id, id));
@@ -84,4 +104,5 @@ export async function DELETE(req: Request) {
   if (existing[0].userId !== me.id) return NextResponse.json({ ok: false, error: "Not allowed" }, { status: 403 });
   await db.delete(addresses).where(eq(addresses.id, id));
   return NextResponse.json({ ok: true });
+  } catch (error) { return deliveryFailure(error); }
 }

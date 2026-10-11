@@ -43,6 +43,6 @@ export async function GET(req: Request) {
     const data = rows.map((r) => ({ ...r.p, categoryName: r.c?.name || null, categorySlug: r.c?.slug || null }));
     return NextResponse.json({ ok: true, products: data });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message, products: [] }, { status: 500 });
+    return NextResponse.json({ ok: false, error: "Unable to complete this request. Please retry.", products: [] }, { status: 500 });
   }
 }

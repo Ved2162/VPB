@@ -1,8 +1,12 @@
+import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { hashPassword, verifyPassword, signToken, getUserFromHeader, COOKIE } from "@/lib/auth";
+import { activeUser, rateLimit, deliveryFailure } from '@/lib/delivery-server';
+import { sameOrigin, textField, DeliveryError } from '@/lib/shipment-rules';
+import { POST as deliveryLogin } from '@/app/api/delivery/login/route';
 
 function setCookie(res: NextResponse, token: string) {
   res.cookies.set(COOKIE, token, {
@@ -27,7 +31,11 @@ export async function GET(req: Request) {
   const u = getUserFromHeader(req);
   if (!u) return NextResponse.json({ ok: true, user: null });
   const rows = await db.select().from(users).where(eq(users.id, u.id));
-  if (!rows.length || !rows[0].active) return NextResponse.json({ ok: true, user: null });
+  if (!rows.length || !rows[0].active) {
+    const response = NextResponse.json({ ok: true, user: null });
+    response.cookies.set(COOKIE, '', { httpOnly: true, path: '/', maxAge: 0, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    return response;
+  }
   const { passwordHash: _p, ...safe } = rows[0] as any;
   const res = NextResponse.json({ ok: true, user: safe });
 
@@ -38,7 +46,7 @@ export async function GET(req: Request) {
     try {
       const payload = JSON.parse(Buffer.from(m[1].split(".")[1], "base64").toString());
       const sevenDays = 7 * 24 * 60 * 60;
-      if (payload.exp && payload.exp - Math.floor(Date.now() / 1000) < sevenDays) {
+      if (u.role !== rows[0].role || payload.exp && payload.exp - Math.floor(Date.now() / 1000) < sevenDays) {
         const fresh = signToken({ id: rows[0].id, name: rows[0].name, phone: rows[0].phone!, role: rows[0].role });
         setCookie(res, fresh);
       }
@@ -50,42 +58,28 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
+    sameOrigin(req);
+    const body = await readJson(req);
     const action = body.action as string;
 
     if (action === "register") {
-      const { name, password } = body;
-      const phone = normalisePhone(body.phone || "");
-      if (!name || !phone || !password) return NextResponse.json({ ok: false, error: "Name, phone number and password are required" }, { status: 400 });
-      if (!isValidPhone(phone)) return NextResponse.json({ ok: false, error: "Enter a valid phone number (7–15 digits)" }, { status: 400 });
-      if (password.length < 6) return NextResponse.json({ ok: false, error: "Password must be at least 6 characters" }, { status: 400 });
-      const ex = await db.select().from(users).where(eq(users.phone, phone));
-      if (ex.length) return NextResponse.json({ ok: false, error: "This phone number is already registered. Please login." }, { status: 400 });
-      const ins = await db.insert(users).values({
-        name: name.trim(),
-        phone,
-        email: null,
-        passwordHash: await hashPassword(password),
-        role: "customer",
-        active: true,
-      }).returning();
-      const token = signToken({ id: ins[0].id, name: ins[0].name, phone: ins[0].phone!, role: ins[0].role });
-      const res = NextResponse.json({ ok: true, user: { id: ins[0].id, name: ins[0].name, phone: ins[0].phone, role: ins[0].role }, token });
-      setCookie(res, token);
-      return res;
+      return NextResponse.json({ ok: false, error: 'Use mobile OTP verification to create an account' }, { status: 403 });
     }
 
     if (action === "login") {
-      const { password } = body;
-      const phone = normalisePhone(body.phone || "");
+      const password = textField(body.password, "password", 72, true);
+      const phone = normalisePhone(textField(body.phone, "phone", 20, true));
+      await rateLimit("customer-auth:" + phone, 10, 900);
       if (!phone || !password) return NextResponse.json({ ok: false, error: "Phone number and password are required" }, { status: 400 });
       const rows = await db.select().from(users).where(eq(users.phone, phone));
-      if (!rows.length) return NextResponse.json({ ok: false, error: "No account found with this number" }, { status: 401 });
+      if (!rows.length) return NextResponse.json({ ok: false, error: "Invalid phone number or password" }, { status: 401 });
+      if (rows[0].role === 'admin') throw new DeliveryError('Use the main admin sign-in page', 403);
+      if (rows[0].role === 'delivery') return deliveryLogin(new Request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify({ phone, password }) }));
       if (!rows[0].active) return NextResponse.json({ ok: false, error: "Account disabled. Contact support." }, { status: 403 });
       const ok = await verifyPassword(password, rows[0].passwordHash);
-      if (!ok) return NextResponse.json({ ok: false, error: "Incorrect password" }, { status: 401 });
+      if (!ok) return NextResponse.json({ ok: false, error: "Invalid phone number or password" }, { status: 401 });
       const token = signToken({ id: rows[0].id, name: rows[0].name, phone: rows[0].phone!, role: rows[0].role });
-      const res = NextResponse.json({ ok: true, user: { id: rows[0].id, name: rows[0].name, phone: rows[0].phone, role: rows[0].role }, token });
+      const res = NextResponse.json({ ok: true, user: { id: rows[0].id, name: rows[0].name, phone: rows[0].phone, role: rows[0].role } });
       setCookie(res, token);
       return res;
     }
@@ -96,20 +90,22 @@ export async function POST(req: Request) {
     }
 
     if (action === "update") {
-      const me = getUserFromHeader(req);
+      const me = await activeUser(req);
       if (!me) return NextResponse.json({ ok: false, error: "Login required" }, { status: 401 });
-      const { name } = body;
+      const name = textField(body.name, "name", 120, true);
+      await rateLimit("profile:" + me.id, 30, 60);
       await db.update(users).set({ name: name || me.name }).where(eq(users.id, me.id));
       return NextResponse.json({ ok: true });
     }
 
     return NextResponse.json({ ok: false, error: "Unknown action" }, { status: 400 });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return deliveryFailure(e);
   }
 }
 
-export async function DELETE() {
+export async function DELETE(req: Request) {
+  try { sameOrigin(req); } catch (error) { return deliveryFailure(error); }
   const res = NextResponse.json({ ok: true });
   res.cookies.set(COOKIE, "", { path: "/", maxAge: 0 });
   return res;

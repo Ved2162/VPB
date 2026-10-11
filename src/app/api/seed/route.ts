@@ -3,6 +3,8 @@ import { db } from "@/db";
 import { categories, products, users, banners, siteContent } from "@/db/schema";
 import { hashPassword, slugify } from "@/lib/auth";
 import { eq } from "drizzle-orm";
+import { sameOrigin, DeliveryError } from '@/lib/shipment-rules';
+import { activeUser, deliveryFailure } from '@/lib/delivery-server';
 
 // Real VPB manjha product images (local static files in /public/images/manjha/)
 // m01 = black 9-cord 2-reel spool
@@ -34,8 +36,13 @@ const IMG = {
   kite2: ["https://images.pexels.com/photos/30470265/pexels-photo-30470265.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "https://images.pexels.com/photos/35098545/pexels-photo-35098545.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"],
 };
 
-export async function POST() {
+export async function POST(req: Request) {
   try {
+    sameOrigin(req);
+      const me = await activeUser(req);
+    if (me.role !== 'admin') return NextResponse.json({ ok: false, error: 'Admin only' }, { status: 403 });
+      if (process.env.ALLOW_SEED !== 'true') throw new DeliveryError('Seeding is disabled', 403);
+      for (const key of ['SEED_ADMIN_PASSWORD', 'SEED_DEMO_PASSWORD']) if (process.env[key] && process.env[key]!.length < 12) throw new DeliveryError('Seed passwords must contain at least 12 characters');
     const catDefs = [
       { name: "6 Cord", slug: "6-cord", description: "Everyday 6 cord Bareilly manjha — perfect balance of sharpness and control for daily flying.", image: IMG.blue[0] },
       { name: "9 Cord", slug: "9-cord", description: "Tournament-favourite 9 cord — extra bite for serious pench.", image: IMG.orange[0] },
@@ -85,16 +92,16 @@ export async function POST() {
       });
     }
 
-    const adminPhone = process.env.SEED_ADMIN_PHONE || "9081111697";
-    const adminPass  = process.env.SEED_ADMIN_PASSWORD || "VPBAdmin@2026!";
-    const exA = await db.select().from(users).where(eq(users.phone, adminPhone));
-    if (!exA.length) {
+    const adminPhone = process.env.SEED_ADMIN_PHONE;
+    const adminPass = process.env.SEED_ADMIN_PASSWORD;
+    const exA = adminPhone ? await db.select().from(users).where(eq(users.phone, adminPhone)) : [];
+    if (adminPhone && adminPass && !exA.length) {
       await db.insert(users).values({ name: "VPB Admin", email: null, phone: adminPhone, passwordHash: await hashPassword(adminPass), role: "admin", active: true });
     }
-    const demoPhone = process.env.SEED_DEMO_PHONE || "9999999999";
-    const demoPass  = process.env.SEED_DEMO_PASSWORD || "Demo@VPB2026!";
-    const exD = await db.select().from(users).where(eq(users.phone, demoPhone));
-    if (!exD.length) {
+    const demoPhone = process.env.SEED_DEMO_PHONE;
+    const demoPass = process.env.SEED_DEMO_PASSWORD;
+    const exD = demoPhone ? await db.select().from(users).where(eq(users.phone, demoPhone)) : [];
+    if (demoPhone && demoPass && !exD.length) {
       await db.insert(users).values({ name: "Demo Customer", email: null, phone: demoPhone, passwordHash: await hashPassword(demoPass), role: "customer", active: true });
     }
 
@@ -114,7 +121,7 @@ export async function POST() {
     }
     return NextResponse.json({ ok: true, message: "Seeded" });
   } catch (e: any) {
-    return NextResponse.json({ ok: false, error: e.message }, { status: 500 });
+    return deliveryFailure(e);
   }
 }
-export async function GET() { return POST(); }
+export async function GET() { return NextResponse.json({ ok: false, error: 'Use an authenticated admin POST request' }, { status: 405 }); }

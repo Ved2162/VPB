@@ -1,7 +1,11 @@
 "use client";
+import { ButtonLoader } from "@/components/loading";
+import { useApiResource } from "@/lib/use-api-resource";
+import { SectionLoader, TableSkeleton, LoadingError } from "@/components/loading";
+import { apiFetch } from "@/lib/api-client";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { BrandedLink as Link } from "@/components/loading";
 import { Package, MapPin, User as UIcon, Settings, LogOut, Truck } from "lucide-react";
 import { useAuth, useToast } from "@/lib/store";
 import { money, ORDER_STEPS, ORDER_LABEL } from "@/lib/data";
@@ -12,9 +16,13 @@ export default function AccountPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [tab, setTab] = useState("orders");
-  const [orders, setOrders] = useState<any[]>([]);
-  const [addrs, setAddrs] = useState<any[]>([]);
-  const [profile, setProfile] = useState({ name: "" });
+  const orderData = useApiResource<{ orders: any[] }>(me ? "/api/orders" : null);
+  const orders = orderData.data?.orders || [];
+  const addressData = useApiResource<{ addresses: any[] }>(me ? "/api/extra?res=addresses" : null);
+  const addrs = addressData.data?.addresses || [];
+  const [profileEdit, setProfileEdit] = useState<{ name: string; userId?: string }>({ name: "" });
+  const profile = profileEdit.userId === me?.id ? profileEdit : { name: me?.name || "" };
+  const setProfile = (value: { name: string }) => setProfileEdit({ ...value, userId: me?.id });
   const [busy, setBusy] = useState(false);
 
   // Only redirect after loading is fully settled AND me is still null
@@ -24,30 +32,14 @@ export default function AccountPage() {
     }
   }, [me, loading, router]);
 
-  // Load data once me is available
-  useEffect(() => {
-    if (me) {
-      setProfile({ name: me.name || "" });
-      fetch("/api/orders", { credentials: "include" })
-        .then((r) => r.json()).then((j) => setOrders(j.orders || [])).catch(() => {});
-      fetch("/api/extra?res=addresses", { credentials: "include" })
-        .then((r) => r.json()).then((j) => setAddrs(j.addresses || [])).catch(() => {});
-    }
-  }, [me]);
-
   // Show skeleton while auth is resolving
   if (loading || !me) {
-    return (
-      <div className="mx-auto max-w-5xl px-4 py-10 space-y-4">
-        <div className="skel h-16 rounded-2xl" />
-        <div className="skel h-64 rounded-2xl" />
-      </div>
-    );
+    return <SectionLoader label="Checking your account…" />;
   }
 
   const saveProfile = async () => {
     setBusy(true);
-    const r = await fetch("/api/auth", {
+    const r = await apiFetch("/api/auth", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "include",
@@ -73,7 +65,7 @@ export default function AccountPage() {
           <h1 className="font-serif text-3xl font-bold">Namaste, {me.name.split(" ")[0]} 🙏</h1>
         </div>
         <button
-          onClick={async () => { await logout(); window.location.href = "/"; }}
+          onClick={async () => { await logout(); router.push("/"); }}
           className="btn-ghost !py-2.5 text-[13px]"
         >
           <LogOut size={15} /> Logout
@@ -98,8 +90,11 @@ export default function AccountPage() {
 
         <div>
           {tab === "orders" && (
-            <div className="space-y-3">
-              {orders.length === 0 && (
+            <div className="space-y-3" aria-busy={orderData.pending}>
+              <SectionLoader active={orderData.pending} label="Loading your orders…" compact={!!orders.length} />
+              {orderData.pending && !orders.length && <TableSkeleton />}
+              {orderData.error && <LoadingError error={orderData.error} retry={orderData.refresh} />}
+              {!orderData.pending && !orderData.error && orders.length === 0 && (
                 <div className="card p-8 text-center">
                   <p className="font-serif text-xl font-bold">No orders yet</p>
                   <p className="text-sm text-stone-500">Your VPB orders will appear here.</p>
@@ -152,7 +147,7 @@ export default function AccountPage() {
 
           {tab === "addresses" && (
             <div className="card p-6">
-              <h3 className="font-serif text-xl font-bold">Saved Addresses</h3>
+              <h3 className="font-serif text-xl font-bold">Saved Addresses</h3><SectionLoader active={addressData.pending} label="Loading saved addresses…" compact />{addressData.error && <LoadingError error={addressData.error} retry={addressData.refresh} />}
               <div className="mt-3 grid gap-2">
                 {addrs.map((a) => (
                   <div key={a.id} className="rounded-2xl border border-[#ecdcb9] p-4 text-sm">
@@ -161,7 +156,7 @@ export default function AccountPage() {
                     {a.isDefault && <span className="pill ml-2 bg-green-100 text-green-800">Default</span>}
                   </div>
                 ))}
-                {addrs.length === 0 && <p className="text-sm text-stone-500">No addresses. Add one at checkout.</p>}
+                {!addressData.pending && !addressData.error && addrs.length === 0 && <p className="text-sm text-stone-500">No addresses. Add one at checkout.</p>}
               </div>
             </div>
           )}
@@ -177,7 +172,7 @@ export default function AccountPage() {
                 </div>
               </div>
               <button onClick={saveProfile} disabled={busy} className="btn-primary mt-4 disabled:opacity-60">
-                {busy ? "Saving…" : "Save Changes"}
+                {busy ? <ButtonLoader label="Saving…" /> : "Save Changes"}
               </button>
             </div>
           )}
@@ -186,7 +181,7 @@ export default function AccountPage() {
             <div className="card p-6">
               <h3 className="font-serif text-xl font-bold">Account Settings</h3>
               <p className="mt-2 text-sm text-stone-500">To change your password or deactivate your account, contact us on WhatsApp +91 90811 11697.</p>
-              <button onClick={async () => { await logout(); window.location.href = "/"; }} className="btn-ghost mt-4">
+              <button onClick={async () => { await logout(); router.push("/"); }} className="btn-ghost mt-4">
                 Logout from all devices
               </button>
             </div>

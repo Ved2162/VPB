@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric, jsonb, index } from "drizzle-orm/pg-core";
 
 export const categories = pgTable("categories", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -40,6 +40,7 @@ export const products = pgTable("products", {
 
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
+  username: varchar("username", { length: 80 }).unique(),
   name: varchar("name", { length: 120 }).notNull(),
   email: varchar("email", { length: 180 }),
   phone: varchar("phone", { length: 20 }).notNull().unique(),
@@ -150,4 +151,60 @@ export const otpRequests = pgTable("otp_requests", {
   // True once successfully verified (single-use)
   consumed: boolean("consumed").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const deliveryStaff = pgTable("delivery_staff", {
+  userId: uuid("user_id").primaryKey().references(() => users.id, { onDelete: "cascade" }),
+  allOrders: boolean("all_orders").default(false).notNull(),
+});
+
+export const deliveryProviders = pgTable("delivery_providers", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  name: varchar("name", { length: 80 }).notNull().unique(),
+  trackingUrl: text("tracking_url").notNull(),
+  active: boolean("active").default(true).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export type ShipmentSnapshot = {
+  providerId: string | null; courierName: string | null; trackingUrl: string;
+  docketNumber: string; status: string; internalNotes: string; assignedTo: string | null;
+};
+
+export const shipments = pgTable("shipments", {
+  orderId: uuid("order_id").primaryKey().references(() => orders.id, { onDelete: "cascade" }),
+  providerId: uuid("provider_id").references(() => deliveryProviders.id),
+  courierName: varchar("courier_name", { length: 80 }),
+  trackingUrl: text("tracking_url").default("").notNull(),
+  docketNumber: varchar("docket_number", { length: 80 }).default("").notNull(),
+  status: varchar("status", { length: 30 }).default("NOT_ASSIGNED").notNull(),
+  internalNotes: text("internal_notes").default("").notNull(),
+  assignedTo: uuid("assigned_to").references(() => users.id),
+  version: integer("version").default(0).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [index("shipments_assigned_idx").on(table.assignedTo), index("shipments_status_idx").on(table.status), index("shipments_provider_idx").on(table.providerId)]);
+
+export const shipmentHistory = pgTable("shipment_status_history", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  orderId: uuid("order_id").notNull().references(() => orders.id, { onDelete: "cascade" }),
+  actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  actorName: varchar("actor_name", { length: 120 }).notNull(),
+  before: jsonb("before").$type<ShipmentSnapshot>().notNull(),
+  after: jsonb("after").$type<ShipmentSnapshot>().notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [index("shipment_history_order_idx").on(table.orderId, table.createdAt)]);
+
+export const deliveryAudit = pgTable("delivery_audit", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  actorId: uuid("actor_id").references(() => users.id, { onDelete: "set null" }),
+  resource: varchar("resource", { length: 30 }).notNull(),
+  resourceId: uuid("resource_id").notNull(),
+  changes: jsonb("changes").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const deliveryRateLimits = pgTable("delivery_rate_limits", {
+  key: varchar("key", { length: 100 }).primaryKey(),
+  count: integer("count").default(1).notNull(),
+  resetAt: timestamp("reset_at", { withTimezone: true }).notNull(),
 });

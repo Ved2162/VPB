@@ -1,4 +1,5 @@
 "use client";
+import { SectionLoader } from "@/components/loading";
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/store";
@@ -17,9 +18,5 @@ export default function RegisterPage() {
     }
   }, [me, loading, router]);
 
-  return (
-    <div className="mx-auto max-w-md px-4 py-12">
-      <div className="skel h-64 rounded-[22px]" />
-    </div>
-  );
+  return <SectionLoader label="Preparing your account…" />;
 }
