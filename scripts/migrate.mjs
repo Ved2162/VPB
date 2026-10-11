@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import pg from 'pg';
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10000 });
+const pool = new pg.Pool({ connectionString: process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL, connectionTimeoutMillis: 10000 });
 const client = await pool.connect();
 try {
   await client.query('BEGIN');

@@ -1,6 +1,6 @@
-Commit: Secure VPB auth and payments; add delivery tracking and branded motion
+Latest commit: Separate application database privileges and enable main deployments
 Target: origin/main (https://github.com/Ved2162/VPB.git)
-GitHub update approved by the user. Vercel automatic deployments are held by vercel.json.
+GitHub update approved by the user. Vercel automatic deployments are enabled for main; preview branches remain held.
 Deleted path: src/middleware.ts (replaced by src/proxy.ts)
 Private local audit report, env files, caches, builds and test artifacts are excluded.
 
@@ -11,6 +11,7 @@ docs/delivery.md
 docs/github-file-list.txt
 docs/loading.md
 docs/security.md
+drizzle.config.ts
 eslint.config.mjs
 migrations/0001_delivery.sql
 migrations/0002_admin_username.sql
