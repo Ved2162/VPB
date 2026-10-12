@@ -8,6 +8,7 @@ vi.mock('@/lib/schedule-order-notification', () => ({ scheduleOrderNotification:
 import { finalizePayment } from '../src/lib/payment-finalization';
 import { processOrderNotifications, safelyProcessOrderNotifications } from '../src/lib/order-notifications';
 import { indianWhatsAppNumber, msg91Config, templatePayload } from '../src/lib/msg91';
+import * as msg91 from '../src/lib/msg91';
 import * as worker from '../src/app/api/internal/whatsapp/route';
 import * as adminRoute from '../src/app/api/admin/notifications/route';
 import * as webhook from '../src/app/api/payment/webhook/route';
@@ -29,6 +30,7 @@ beforeAll(async () => {
   ]).returning();
 });
 beforeEach(() => {
+  vi.spyOn(msg91, 'inspectMsg91Template').mockResolvedValue({ ready: true, code: null });
   vi.stubEnv('MSG91_WHATSAPP_ENABLED', 'true'); vi.stubEnv('MSG91_AUTH_KEY', 'unit-test-only');
   vi.stubEnv('MSG91_WHATSAPP_NUMBER', '919400000099'); vi.stubEnv('MSG91_TEMPLATE_NAME', 'test_fixture_only');
   vi.stubEnv('MSG91_TEMPLATE_LANGUAGE', 'en'); vi.stubEnv('MSG91_TEMPLATE_NAMESPACE', 'test-namespace');
@@ -36,7 +38,7 @@ beforeEach(() => {
   vi.stubEnv('MSG91_TEMPLATE_AMOUNT_FORMAT', 'currency');
   vi.stubEnv('JWT_SECRET', 'isolated-whatsapp-test-secret-never-production');
   vi.stubEnv('RAZORPAY_WEBHOOK_SECRET', 'isolated-webhook-test-secret');
-  transport.mockReset().mockResolvedValue(Response.json({ status: 'success', request_id: 'test-request-id' }));
+  transport.mockReset().mockImplementation(async () => Response.json({ status: 'success', request_id: 'test-request-id' }));
   vi.stubGlobal('fetch', transport);
 });
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
@@ -177,7 +179,7 @@ test('explicit provider rejection allows admin retry but not customer retry or a
 });
 test('rate limits use bounded delayed retries', async () => {
   const order = await pending(); await confirm(order);
-  transport.mockResolvedValue(new Response('', { status: 429 }));
+  transport.mockImplementation(async () => new Response('', { status: 429 }));
   await processOrderNotifications(order.id); await processOrderNotifications(order.id);
   expect(transport).toHaveBeenCalledTimes(1);
   expect(await notification(order.id)).toMatchObject({ status: 'retry', attempts: 1 });
@@ -243,8 +245,39 @@ test('authenticated targeted worker sends only the selected order and rejects in
   await worker.GET(new Request('http://localhost/api/internal/whatsapp?orderId=' + selected.id, { headers }));
   expect(transport).toHaveBeenCalledTimes(1);
 });
+test('authenticated diagnostics do not send pending confirmations', async () => {
+  const order = await pending(); await confirm(order);
+  vi.stubEnv('CRON_SECRET', 'test-worker-secret-with-at-least-32-characters');
+  const response = await worker.GET(new Request('http://localhost/api/internal/whatsapp?diagnose=true&orderId=' + order.id, { headers: { authorization: 'Bearer ' + process.env.CRON_SECRET } }));
+  expect(response.status).toBe(200); expect((await response.json()).template.ready).toBe(true);
+  expect(transport).not.toHaveBeenCalled(); expect((await notification(order.id)).attempts).toBe(0);
+  expect((await worker.GET(new Request('http://localhost/api/internal/whatsapp?diagnose=true'))).status).toBe(401);
+});
 test('background database failure returns sanitized error without altering payment', async () => {
   const saved = state.db; state.db = null;
   expect(await safelyProcessOrderNotifications()).toEqual({ processed: 0, error: 'worker_failed' });
   state.db = saved;
+});
+test('pending approval leaves the paid order queued without sending; approval allows one send', async () => {
+  const order = await pending(); await confirm(order);
+  vi.mocked(msg91.inspectMsg91Template).mockResolvedValueOnce({ ready: false, code: 'template_pending' });
+  expect(await processOrderNotifications(order.id)).toEqual({ processed: 0, configured: true, blocked: 'template_pending' });
+  expect(await notification(order.id)).toMatchObject({ status: 'pending', attempts: 0, errorCode: 'template_pending' });
+  expect(transport).not.toHaveBeenCalled();
+  expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, order.id)))[0].paymentStatus).toBe('paid');
+  await database.db.update(schema.orderNotifications).set({ nextAttemptAt: new Date(0) }).where(eq(schema.orderNotifications.orderId, order.id));
+  await processOrderNotifications(order.id); await processOrderNotifications(order.id);
+  expect(transport).toHaveBeenCalledTimes(1); expect((await notification(order.id)).status).toBe('accepted');
+});
+test('provider request and full error response logs redact credentials and echoed customer details', async () => {
+  const order = await pending(); await confirm(order);
+  const log = vi.spyOn(console, 'info').mockImplementation(() => {});
+  transport.mockResolvedValueOnce(Response.json({ status: 'fail', hasError: true, errors: [{ code: 132001, message: 'Template missing for ' + customer.name + ' at ' + customer.phone, details: { authkey: 'unit-test-only', customerName: customer.name, address: 'Sensitive address' } }] }, { status: 400 }));
+  await processOrderNotifications(order.id);
+  const logs = JSON.stringify(log.mock.calls);
+  expect(logs).toContain('132001'); expect(logs).toContain('Template missing');
+  expect(logs).not.toContain('unit-test-only'); expect(logs).not.toContain(customer.name);
+  expect(logs).not.toContain(customer.phone); expect(logs).not.toContain('Sensitive address');
+  expect(logs).not.toContain('919400000099');
+  expect((await notification(order.id)).status).toBe('failed');
 });

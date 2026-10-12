@@ -61,7 +61,7 @@ This only requeues failed/skipped rows. Accepted/active rows cannot be resent. T
 
 For unknown rows, inspect MSG91 logs/support using `CRQID = vpb-order-<database-order-uuid>`, request ID if available and attempt time. CRQID is correlation metadata, **not a documented provider idempotency key**. Only after definitive provider confirmation of non-acceptance use `action: "confirmed_not_accepted"`. For confirmed acceptance use `action: "confirmed_accepted"` plus `providerRequestId: "<actual-request-id>"`; this records acceptance without sending again. Admin ID and resolution are stored. A missing log entry alone is not proof of non-acceptance. If uncertain, leave unknown and contact MSG91.
 
-Exactly-once delivery cannot be guaranteed across a database and third-party HTTP without provider idempotency. This implementation prevents automatic duplicate submissions and quarantines ambiguous outcomes. A provider acceptance followed by a database-write failure becomes stale/unknown for reconciliation. No unauthenticated delivery webhook is added; verify delivery in MSG91's dashboard.
+Exactly-once delivery cannot be guaranteed across a database and third-party HTTP without provider idempotency. This implementation prevents automatic duplicate submissions and quarantines ambiguous outcomes. A provider acceptance followed by a database-write failure becomes stale/unknown for reconciliation. No unauthenticated delivery webhook is added. A protected read-only diagnostic mode can retrieve final delivery reports through MSG91's official API; dashboard verification remains available.
 
 ## Real test order
 
@@ -88,3 +88,24 @@ The previous three-variable template was rejected in MSG91 delivery logs even th
 ## Controlled production checks
 
 An explicitly authorized controlled notification test can limit the authenticated worker to one order with `GET /api/internal/whatsapp?orderId=<database-order-uuid>` and its normal scheduler bearer credential. UUID validation and the same payment/recipient/idempotency checks apply. Other pending notifications are not sent by a targeted invocation. An accepted or unknown row is never automatically requeued for testing; reconcile against MSG91's final failed-delivery report first. Razorpay test mode does not make MSG91 sends simulated: provider acceptance and actual delivery still require separate verification.
+
+## Verified template-lookup investigation (12 October 2026)
+
+Trace: checkout creates the local pending order using database prices and the authenticated profile; verified Razorpay capture finalizes it and queues one notification atomically; Next.js after-response work or cron processes that durable row; the server reads its registered recipient and persisted order fields; the MSG91 v5 bulk template POST is submitted only after template approval/schema preflight passes.
+
+The official Get Templates API returned the configured template in language `en`, with matching namespace, Utility category, positional text variables `body_1` and `body_2`, `is_disabled=0`, but approval **status `pending`**. The two previous templates were also pending. MSG91's UI Enabled flag is different from this approval state. The official delivery report confirmed template-not-found failure with null sent/delivery timestamps. No successfully delivered message has been verified.
+
+The send endpoint remains `https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/`, matching the account-generated cURL. The public reference also documents the `control.msg91.com` host for this v5 route. The request envelope, deterministic language policy, namespace and text body component structure match the supplied/generated contract. The backend does not submit a template ID in place of its name. The latest user error text used `order_confirm`; live configuration and the retrieved inventory use the user-supplied `order_conform`. No speculative spelling or locale change was made.
+
+Documented read-only APIs:
+
+- GET `https://control.msg91.com/api/v5/whatsapp/get-template-client/:number?template_name=...`
+- GET `https://control.msg91.com/api/v5/report/logs/wa?startDate=YYYY-MM-DD&endDate=YYYY-MM-DD&requestId=...&fields=...`
+
+Preflight checks approval, exact template/language/namespace, disabled state and the supported variable types/count before claiming a notification. Pending/invalid lookup leaves it queued with a fixed diagnostic code and a five-minute not-before time. It does not consume send attempts. The existing Hobby recovery schedule is daily; faster automatic recovery still requires a supported scheduler cadence. No approval is inferred from Enabled.
+
+For an authorized operator, GET `/api/internal/whatsapp?diagnose=true&orderId=<database-order-uuid>` with the existing scheduler bearer credential returns sanitized template status and the order's recorded request's final delivery report. This mode sends nothing and changes no order/notification state. The provider report query explicitly excludes recipient and message-content fields.
+
+Server logs include the sanitized outgoing request structure, endpoint/version, variable mapping, HTTP response code and complete structured response with secret/customer fields redacted. Free-text errors also redact known recipient/name/variable values, phone-like strings and emails. Requests never log auth headers. Oversized responses are bounded and identified instead of dumped. Nested diagnostics are JSON-serialized so error details are not reduced to `[Object]`.
+
+Get the existing template approved in Meta/MSG91; do not create duplicates or change code to bypass approval. Once the API reports approved, run one authorized test using a reconciled failed notification or a new test checkout, then confirm a `delivered`/`read` report. API acceptance alone cannot mark this integration fixed. Templates approved after earlier failed sends do not automatically make those historical attempts delivered.
