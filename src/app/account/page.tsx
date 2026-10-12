@@ -10,6 +10,7 @@ import { Package, MapPin, User as UIcon, Settings, LogOut, Truck } from "lucide-
 import { useAuth, useToast } from "@/lib/store";
 import { money, ORDER_STEPS, ORDER_LABEL } from "@/lib/data";
 import { SafeImg } from "@/components/site";
+import { InvoiceActions } from '@/components/invoice-actions';
 
 export default function AccountPage() {
   const { me, loading, refresh, logout } = useAuth();
@@ -140,6 +141,7 @@ export default function AccountPage() {
                       );
                     })}
                   </div>
+                  {['paid', 'refunded'].includes(o.paymentStatus) && <InvoiceActions orderId={o.id} />}
                 </div>
               ))}
             </div>

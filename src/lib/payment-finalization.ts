@@ -3,11 +3,12 @@ import { orders, orderItems, products, orderNotifications } from '@/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { DeliveryError } from './shipment-rules';
 import { isUuid } from './http-security';
+import { safelyEnsureInvoice } from './invoices';
 
 type Confirmation = { orderId: string; paymentId: string; amount: number; currency: string; method?: string; userId?: string; webhook?: boolean; signature?: string };
 // Both the signed checkout response and the signed webhook use this locked transaction.
 export async function finalizePayment(confirmation: Confirmation) {
-  return db.transaction(async tx => {
+  const result = await db.transaction(async tx => {
     const [order] = await tx.select().from(orders).where(and(eq(orders.razorpayOrderId, confirmation.orderId), confirmation.userId ? eq(orders.userId, confirmation.userId) : undefined)).for('update');
     if (!order) throw new DeliveryError('Order not found', 404);
     if (confirmation.currency !== 'INR' || confirmation.amount !== order.total * 100) throw new DeliveryError('Payment amount does not match the order', 400);
@@ -35,4 +36,6 @@ export async function finalizePayment(confirmation: Confirmation) {
     await tx.insert(orderNotifications).values({ orderId: paid.id }).onConflictDoNothing();
     return { order: paid, already: false };
   });
+  await safelyEnsureInvoice(result.order.id);
+  return result;
 }

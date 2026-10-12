@@ -4,6 +4,8 @@ const nextConfig: NextConfig = {
   distDir: process.env.NEXT_OUTPUT_DIR || '.next',
   devIndicators: false,
   poweredByHeader: false,
+  serverExternalPackages: ['pdfkit', 'svg-to-pdfkit'],
+  outputFileTracingIncludes: { '/api/orders/*/invoice': ['./assets/invoice/**/*', './public/images/vpb-logo.svg'] },
   async headers() {
     return [{ source: '/:path*', headers: [
       { key: 'X-Content-Type-Options', value: 'nosniff' },

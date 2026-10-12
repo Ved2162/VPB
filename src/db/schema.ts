@@ -1,4 +1,5 @@
 import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric, jsonb, index } from "drizzle-orm/pg-core";
+import type { InvoiceSnapshot } from '@/lib/invoice-types';
 
 export const categories = pgTable("categories", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -124,6 +125,23 @@ export const orderNotifications = pgTable('order_notifications', {
   resolution: varchar('resolution', { length: 40 }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, table => [index('order_notifications_due_idx').on(table.status, table.nextAttemptAt)]);
+
+export const invoiceCounters = pgTable('invoice_counters', {
+  financialYear: varchar('financial_year', { length: 7 }).primaryKey(),
+  lastNumber: integer('last_number').notNull(),
+});
+export const orderInvoices = pgTable('order_invoices', {
+  orderId: uuid('order_id').primaryKey().references(() => orders.id),
+  invoiceNumber: varchar('invoice_number', { length: 30 }).unique().notNull(),
+  issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
+  snapshot: jsonb('snapshot').$type<InvoiceSnapshot>().notNull(),
+});
+export const invoiceCancellations = pgTable('invoice_cancellations', {
+  orderId: uuid('order_id').primaryKey().references(() => orderInvoices.orderId),
+  actorId: uuid('actor_id').notNull().references(() => users.id),
+  reason: varchar('reason', { length: 500 }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
 
 export const reviews = pgTable("reviews", {
   id: uuid("id").defaultRandom().primaryKey(),

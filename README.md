@@ -248,3 +248,7 @@ https://your-domain.vercel.app/api/payment/webhook
 ## License
 
 Private — Verai Patang Bhandar. All rights reserved.
+
+## Order receipts
+
+See [invoice setup, integrity and verification](docs/invoices.md) for PDF download/share and the invoice migration.

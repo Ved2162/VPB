@@ -10,6 +10,7 @@ import { useCart, useAuth, useToast } from "@/lib/store";
 import { money } from "@/lib/data";
 import { SafeImg } from "@/components/site";
 import RazorpayLoader, { openRazorpay } from "@/lib/razorpay-client";
+import { InvoiceActions } from '@/components/invoice-actions';
 
 const STEPS = ["Account", "Address", "Summary", "Payment", "Done"];
 
@@ -183,6 +184,7 @@ export default function CheckoutPage() {
             <p>Tracking <b>{order.trackingNumber}</b> • {order.courier}</p>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-2"><Link href={`/track-order?num=${order.orderNumber}`} className="btn-ghost">Track Order</Link><Link href="/account" className="btn-primary">My Orders</Link></div>
+          <InvoiceActions orderId={order.id} />
         </div>
       ) : (
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_360px]">

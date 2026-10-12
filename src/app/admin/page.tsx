@@ -1,4 +1,5 @@
 "use client";
+import { InvoiceActions } from '@/components/invoice-actions';
 import { ButtonLoader } from "@/components/loading";
 import { useApiActivity, SectionLoader, TableSkeleton } from "@/components/loading";
 import { apiFetch } from "@/lib/api-client";
@@ -211,6 +212,7 @@ export default function Admin() {
               {!selOrder ? <p className="text-sm text-stone-500">Select an order to manage status, courier & tracking.</p> : (
                 <div>
                   <p className="font-serif text-lg font-bold">{selOrder.orderNumber}</p>
+                  {['paid', 'refunded'].includes(selOrder.paymentStatus) && <InvoiceActions key={selOrder.id} orderId={selOrder.id} admin />}
                   <p className="text-xs text-stone-500">{selOrder.customerName} • {selOrder.customerEmail} • {selOrder.customerPhone}</p>
                   <p className="mt-1 text-xs">{(selOrder.shippingAddress as any)?.addressLine}, {(selOrder.shippingAddress as any)?.city} — {(selOrder.shippingAddress as any)?.pincode}</p>
                   <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">

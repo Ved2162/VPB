@@ -21,11 +21,13 @@
     "jsonwebtoken": "^9.0.3",
     "lucide-react": "^1.52.0",
     "next": "16.4.0",
+    "pdfkit": "^0.20.2",
     "pg": "8.20.0",
     "razorpay": "^2.9.8",
     "react": "19.2.6",
     "react-dom": "19.2.6",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "svg-to-pdfkit": "^0.1.8"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.8",
@@ -33,9 +35,11 @@
     "@playwright/test": "^1.64.0",
     "@tailwindcss/postcss": "4.1.17",
     "@types/node": "22.19.15",
+    "@types/pdfkit": "^0.17.6",
     "@types/pg": "8.18.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "@types/svg-to-pdfkit": "^0.1.4",
     "drizzle-kit": "0.31.10",
     "eslint": "9.39.4",
     "eslint-config-next": "16.4.0",

@@ -105,5 +105,6 @@ docs/*audit*.local.md
 audit-dependencies.json
 audit-production.json
 lint-baseline.json
+tmp/pdfs/
 .env.*
 !.env.example
