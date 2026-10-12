@@ -143,6 +143,26 @@ test('namespace must be explicitly configured; a real namespace is preserved', (
   expect(msg91Config()?.namespace).toBe('provided-namespace');
   vi.stubEnv('MSG91_TEMPLATE_NAMESPACE', 'null'); expect(msg91Config()?.namespace).toBeNull();
 });
+test.each(['customer_name,order_id', 'order_id,total_amount'])('two-variable templates send only the explicitly configured fields: %s', async mapping => {
+  const order = await pending(); const paid = await confirm(order);
+  vi.stubEnv('MSG91_TEMPLATE_NAME', 'two_variable_test_fixture');
+  vi.stubEnv('MSG91_TEMPLATE_BODY_VARIABLES', mapping);
+  const config = msg91Config(); expect(config).not.toBeNull();
+  const components = templatePayload(config!, paid.order, '919400000021').payload.template.to_and_components[0].components;
+  expect(Object.keys(components)).toEqual(['body_1', 'body_2']);
+  if (mapping === 'customer_name,order_id') {
+    expect(components.body_1.value).toBe(customer.name); expect(components.body_2.value).toBe(order.orderNumber);
+  } else {
+    expect(components.body_1.value).toBe(order.orderNumber); expect(components.body_2.value).toBe('INR 123.00');
+  }
+  expect(transport).not.toHaveBeenCalled();
+});
+test('missing or unsupported variable mapping blocks provider requests', () => {
+  for (const mapping of ['', 'customer_name,', 'customer_name,untrusted_total']) {
+    vi.stubEnv('MSG91_TEMPLATE_BODY_VARIABLES', mapping); expect(msg91Config()).toBeNull();
+  }
+  expect(transport).not.toHaveBeenCalled();
+});
 test('explicit provider rejection allows admin retry but not customer retry or accepted resend', async () => {
   const order = await pending(); await confirm(order);
   transport.mockResolvedValueOnce(new Response('', { status: 401 }));

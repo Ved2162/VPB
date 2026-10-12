@@ -19,7 +19,7 @@ export function msg91Config() {
   const name = process.env.MSG91_TEMPLATE_NAME?.trim();
   const language = process.env.MSG91_TEMPLATE_LANGUAGE?.trim();
   const namespaceSetting = process.env.MSG91_TEMPLATE_NAMESPACE?.trim();
-  // MSG91's generated request for this template explicitly uses JSON null.
+  // Some MSG91-generated requests explicitly use JSON null.
   // Require an explicit setting so missing configuration is not silently inferred.
   const namespace = namespaceSetting === 'null' ? null : namespaceSetting;
   const amountFormat = process.env.MSG91_TEMPLATE_AMOUNT_FORMAT?.trim() || 'currency';
@@ -27,8 +27,7 @@ export function msg91Config() {
   if (!key || !number || !/^\d{8,15}$/.test(number) || !name || !/^[a-z0-9_]+$/.test(name) ||
       !language || !/^[a-z]{2,3}(?:_[A-Z]{2})?$/.test(language) || !namespaceSetting ||
       !variables?.length || variables.some(v => !fields.includes(v)) ||
-      !['currency', 'number'].includes(amountFormat) ||
-      ['customer_name', 'order_id', 'total_amount'].some(v => !variables.includes(v as Field))) return null;
+      !['currency', 'number'].includes(amountFormat)) return null;
   return { key, number, name, language, namespace, variables, amountFormat };
 }
 

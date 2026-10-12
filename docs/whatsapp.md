@@ -6,7 +6,7 @@ The existing Next.js/Drizzle/PostgreSQL checkout and Razorpay verification remai
 
 Finalization atomically inserts one `order_notifications` row with the verified paid order. Only a newly confirmed payment queues a notification; there is no historical backfill. Duplicate verification/webhooks cannot queue another row. After commit, Next.js `after()` processes the row without delaying the HTTP response. A scheduler recovers pending rows if the response task is interrupted. Notification retries never create orders or rerun payment finalization.
 
-The worker atomically claims a row across concurrent instances, then checks persisted payment/order state and the registered phone snapshot. For the supplied approved template, it sends exactly the stored customer name, public order number and server-verified total, in that order. The amount is numeric because the fixed template already includes the rupee symbol. The confirmation sentence and delivery estimate remain the template's static text. No order date, payment status or extra message text is appended.
+The worker atomically claims a row across concurrent instances, then checks persisted payment/order state and the registered phone snapshot. For the latest supplied template, it sends exactly the stored customer name and public order number, in that order. The template's fixed text says the order is being prepared and the customer will be notified when it is on the way. This integration sends the order confirmation only; that sentence does not implement a separate dispatch notification. No order date, payment status or extra message text is appended.
 
 Missing/invalid Indian mobile numbers are skipped; delivery-address numbers are not used as an unverified fallback. Ten-digit mobile numbers, `91`/`+91` prefixes and domestic leading zero are supported, with common separators. Output is `91` followed by ten digits, without `+`.
 
@@ -28,7 +28,7 @@ Missing/invalid Indian mobile numbers are skipped; delivery-address numbers are 
 | `MSG91_TEMPLATE_AMOUNT_FORMAT` | `number` if the template already contains a currency symbol; otherwise `currency` (default) |
 | `CRON_SECRET` | Separate random secret of at least 32 characters |
 
-For this approved template set `MSG91_TEMPLATE_BODY_VARIABLES=customer_name,order_id,total_amount` and `MSG91_TEMPLATE_AMOUNT_FORMAT=number`. Send exactly three body parameters: `body_1` = customer name, `body_2` = order ID, `body_3` = order amount. The user explicitly confirmed that the existing approved Utility template must be used without an order-date placeholder. Do not add a fourth variable or alter the approved text. The generic adapter also supports other field mappings, but those are not used for this template.
+For the current template, set `MSG91_TEMPLATE_BODY_VARIABLES=customer_name,order_id`. Send exactly two body parameters: `body_1` = customer name and `body_2` = public order ID. The user supplied the actual text: `Hi {{1}}, We're getting your order {{2}} ready and will let you know when it's on the way.` Do not append amount, date, payment status or a third variable. The adapter requires an explicit non-empty mapping of supported server fields; it does not infer the mapping from the number of placeholders.
 
 The latest MSG91-generated API request supplies a real namespace. Copy that exact string into `MSG91_TEMPLATE_NAMESPACE` in Vercel and redeploy; do not retain the `null` value from the earlier generated example. The adapter preserves a supplied namespace verbatim. It also supports explicit `null` for templates whose current generated request actually requires JSON null, but that is no longer the supplied template's configuration. Empty/unset configuration still blocks sending.
 
@@ -79,13 +79,8 @@ Exactly-once delivery cannot be guaranteed across a database and third-party HTT
 
 Official references: [WhatsApp](https://docs.msg91.com/whatsapp), [template API](https://docs.msg91.com/whatsapp/template-bulk), [payload example](https://msg91.com/help/whatsapp/whatsapp-otp), [CRQID](https://msg91.com/help/whatsapp/how-to-pass-crqid-in-whatsapp-), [delivery reports](https://msg91.com/help/whatsapp/how-to-get-reports-of-whatsapp-messages-on-webhook). The payload example documents the shared transport; use your approved Utility template, not its authentication example.
 
-## Supplied VPB template configuration
+## Current VPB template configuration
 
-The user supplied a three-variable template, its language and an integrated sender. Those account-specific settings are stored only in the local ignored `.env`, with this mapping:
+The latest user-supplied template has exactly two variables, mapped to customer name and public order number. The actual account-specific template name, sender, language and namespace are stored in server environment settings only. Vercel production configuration has been updated to the latest supplied template with `MSG91_TEMPLATE_BODY_VARIABLES=customer_name,order_id`. Local sending remains disabled unless explicitly enabled for a real test.
 
-- `MSG91_TEMPLATE_BODY_VARIABLES=customer_name,order_id,total_amount`
-- `MSG91_TEMPLATE_NAMESPACE` matches the real namespace from the latest MSG91-generated request; the value is stored only in server environment settings.
-- `MSG91_TEMPLATE_AMOUNT_FORMAT=number` because the fixed body already includes the rupee symbol.
-- `MSG91_WHATSAPP_ENABLED=false` pending completion of setup.
-
-The supplied body contains a static confirmation sentence and a 5-to-7-day delivery estimate. Exactly three variables are sent; no fourth date variable or payment-status text is appended. The user confirmed Utility approval and explicitly instructed use of this existing template without an order date; this supersedes the original date requirement. The refreshed MSG91-generated request supplies a real namespace, replacing the earlier null namespace. Local and production environment configuration must match the latest request. Template name, sender and language also match that request. The supplied template text and delivery estimate are user-provided, not independently verified. No credential has been copied into repository files; production credentials are configured only in Vercel server environment variables. No real message has been sent during automated verification.
+The previous three-variable template was rejected in MSG91 delivery logs even though the API initially accepted the submission. Changing template configuration does not resend those accepted-but-failed historical rows. Reconcile them against MSG91's final failure report before an explicitly authorized retry. Never create another order to retry a notification. Template approval and live delivery must be verified with MSG91; a successful build or API request does not establish delivery.
