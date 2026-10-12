@@ -6,7 +6,7 @@ The existing Next.js/Drizzle/PostgreSQL checkout and Razorpay verification remai
 
 Finalization atomically inserts one `order_notifications` row with the verified paid order. Only a newly confirmed payment queues a notification; there is no historical backfill. Duplicate verification/webhooks cannot queue another row. After commit, Next.js `after()` processes the row without delaying the HTTP response. A scheduler recovers pending rows if the response task is interrupted. Notification retries never create orders or rerun payment finalization.
 
-The worker atomically claims a row across concurrent instances, then checks persisted payment/order state and the registered phone snapshot. For the latest supplied template, it sends exactly the stored customer name and public order number, in that order. The template's fixed text says the order is being prepared and the customer will be notified when it is on the way. This integration sends the order confirmation only; that sentence does not implement a separate dispatch notification. No order date, payment status or extra message text is appended.
+The worker atomically claims a row across concurrent instances, then checks persisted payment/order state and the registered phone snapshot. For the selected three-variable template, it sends exactly the stored customer name, public order number and server-verified total, in that order. The amount is numeric because the fixed template already supplies the rupee symbol. Its confirmation sentence and delivery estimate stay in the approved template text. No order date, payment status or extra message text is appended.
 
 Missing/invalid Indian mobile numbers are skipped; delivery-address numbers are not used as an unverified fallback. Ten-digit mobile numbers, `91`/`+91` prefixes and domestic leading zero are supported, with common separators. Output is `91` followed by ten digits, without `+`.
 
@@ -28,7 +28,7 @@ Missing/invalid Indian mobile numbers are skipped; delivery-address numbers are 
 | `MSG91_TEMPLATE_AMOUNT_FORMAT` | `number` if the template already contains a currency symbol; otherwise `currency` (default) |
 | `CRON_SECRET` | Separate random secret of at least 32 characters |
 
-For the current template, set `MSG91_TEMPLATE_BODY_VARIABLES=customer_name,order_id`. Send exactly two body parameters: `body_1` = customer name and `body_2` = public order ID. The user supplied the actual text: `Hi {{1}}, We're getting your order {{2}} ready and will let you know when it's on the way.` Do not append amount, date, payment status or a third variable. The adapter requires an explicit non-empty mapping of supported server fields; it does not infer the mapping from the number of placeholders.
+For the selected template, set `MSG91_TEMPLATE_BODY_VARIABLES=customer_name,order_id,total_amount` and `MSG91_TEMPLATE_AMOUNT_FORMAT=number`. Send exactly `body_1` = customer name, `body_2` = public order ID, `body_3` = order amount. The mapping was confirmed from the user-supplied text and the official API's variable definitions. Do not add date or payment-status parameters.
 
 The latest MSG91-generated API request supplies a real namespace. Copy that exact string into `MSG91_TEMPLATE_NAMESPACE` in Vercel and redeploy; do not retain the `null` value from the earlier generated example. The adapter preserves a supplied namespace verbatim. It also supports explicit `null` for templates whose current generated request actually requires JSON null, but that is no longer the supplied template's configuration. Empty/unset configuration still blocks sending.
 
@@ -81,9 +81,9 @@ Official references: [WhatsApp](https://docs.msg91.com/whatsapp), [template API]
 
 ## Current VPB template configuration
 
-The latest user-supplied template has exactly two variables, mapped to customer name and public order number. The actual account-specific template name, sender, language and namespace are stored in server environment settings only. Vercel production configuration has been updated to the latest supplied template with `MSG91_TEMPLATE_BODY_VARIABLES=customer_name,order_id`. Local sending remains disabled unless explicitly enabled for a real test.
+The user selected the original three-variable template again. Its sender, name, language and namespace are stored in server environment settings. Production mapping is `customer_name,order_id,total_amount`; amount format is `number`. Local sending remains disabled unless explicitly enabled for a real test.
 
-The previous three-variable template was rejected in MSG91 delivery logs even though the API initially accepted the submission. Changing template configuration does not resend those accepted-but-failed historical rows. Reconcile them against MSG91's final failure report before an explicitly authorized retry. Never create another order to retry a notification. Template approval and live delivery must be verified with MSG91; a successful build or API request does not establish delivery.
+The official Get Templates API still reported pending approval for this template at the configuration switch. The server approval guard leaves new confirmations queued and sends them only after the API reports approved. The daily Vercel recovery job will process queued confirmations at a subsequent eligible run; it does not receive an instant template-approval callback. New verified checkouts after approval can send immediately. Notifications whose official reports already confirmed template-not-found failure may be requeued for automatic recovery; accepted or ambiguous attempts must never be blindly requeued.
 
 ## Controlled production checks
 
@@ -109,3 +109,7 @@ For an authorized operator, GET `/api/internal/whatsapp?diagnose=true&orderId=<d
 Server logs include the sanitized outgoing request structure, endpoint/version, variable mapping, HTTP response code and complete structured response with secret/customer fields redacted. Free-text errors also redact known recipient/name/variable values, phone-like strings and emails. Requests never log auth headers. Oversized responses are bounded and identified instead of dumped. Nested diagnostics are JSON-serialized so error details are not reduced to `[Object]`.
 
 Get the existing template approved in Meta/MSG91; do not create duplicates or change code to bypass approval. Once the API reports approved, run one authorized test using a reconciled failed notification or a new test checkout, then confirm a `delivered`/`read` report. API acceptance alone cannot mark this integration fixed. Templates approved after earlier failed sends do not automatically make those historical attempts delivered.
+
+## Switch back to the original template
+
+The original three-variable template was selected again after the pending approval state was established. The official API confirmed its language, namespace and text variables. Sender configuration remains the previously verified integrated number; the placeholder in the latest cURL is not a replacement sender. No templates were recreated. Live delivery is still unverified until approval and a delivered/read report.
