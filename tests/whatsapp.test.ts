@@ -228,6 +228,21 @@ test('worker requires its own strong credential', async () => {
   vi.stubEnv('MSG91_WHATSAPP_ENABLED', 'false');
   expect((await worker.GET(new Request('http://localhost/api/internal/whatsapp', { headers: { authorization: 'Bearer ' + process.env.CRON_SECRET } }))).status).toBe(200);
 });
+test('authenticated targeted worker sends only the selected order and rejects invalid filters', async () => {
+  const selected = await pending(); await confirm(selected);
+  const otherOrder = await pending(); await confirm(otherOrder);
+  vi.stubEnv('CRON_SECRET', 'test-worker-secret-with-at-least-32-characters');
+  const headers = { authorization: 'Bearer ' + process.env.CRON_SECRET };
+  expect((await worker.GET(new Request('http://localhost/api/internal/whatsapp?orderId=invalid', { headers }))).status).toBe(400);
+  expect((await worker.GET(new Request('http://localhost/api/internal/whatsapp?orderId=', { headers }))).status).toBe(400);
+  const response = await worker.GET(new Request('http://localhost/api/internal/whatsapp?orderId=' + selected.id, { headers }));
+  expect(response.status).toBe(200); expect(await response.json()).toEqual({ processed: 1, configured: true });
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect((await notification(selected.id)).status).toBe('accepted');
+  expect((await notification(otherOrder.id)).status).toBe('pending');
+  await worker.GET(new Request('http://localhost/api/internal/whatsapp?orderId=' + selected.id, { headers }));
+  expect(transport).toHaveBeenCalledTimes(1);
+});
 test('background database failure returns sanitized error without altering payment', async () => {
   const saved = state.db; state.db = null;
   expect(await safelyProcessOrderNotifications()).toEqual({ processed: 0, error: 'worker_failed' });

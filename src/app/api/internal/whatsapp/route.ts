@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { safelyProcessOrderNotifications } from '@/lib/order-notifications';
+import { isUuid } from '@/lib/http-security';
 export const runtime = 'nodejs';
 export const maxDuration = 120;
 export const dynamic = 'force-dynamic';
@@ -12,6 +13,8 @@ export async function GET(req: Request) {
   if (!secret || secret.length < 32 || supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) {
     return Response.json({ ok: false }, { status: 401 });
   }
-  const result = await safelyProcessOrderNotifications();
+  const orderId = new URL(req.url).searchParams.get('orderId');
+  if (orderId !== null && !isUuid(orderId)) return Response.json({ ok: false, error: 'Invalid order ID' }, { status: 400 });
+  const result = await safelyProcessOrderNotifications(orderId ?? undefined);
   return Response.json(result, { status: 'error' in result ? 503 : 200, headers: { 'Cache-Control': 'no-store' } });
 }
