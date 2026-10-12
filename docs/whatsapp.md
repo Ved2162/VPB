@@ -23,14 +23,14 @@ Missing/invalid Indian mobile numbers are skipped; delivery-address numbers are 
 | `MSG91_WHATSAPP_NUMBER` | Integrated sender, digits with country code |
 | `MSG91_TEMPLATE_NAME` | Exact approved Utility template name |
 | `MSG91_TEMPLATE_LANGUAGE` | Exact template language code |
-| `MSG91_TEMPLATE_NAMESPACE` | Literal `null` for the supplied MSG91 request; serialized as JSON null, not a string |
+| `MSG91_TEMPLATE_NAMESPACE` | Exact namespace from the latest generated MSG91 request, stored server-side in Vercel |
 | `MSG91_TEMPLATE_BODY_VARIABLES` | Comma-separated field names in exact approved body-variable order |
 | `MSG91_TEMPLATE_AMOUNT_FORMAT` | `number` if the template already contains a currency symbol; otherwise `currency` (default) |
 | `CRON_SECRET` | Separate random secret of at least 32 characters |
 
 For this approved template set `MSG91_TEMPLATE_BODY_VARIABLES=customer_name,order_id,total_amount` and `MSG91_TEMPLATE_AMOUNT_FORMAT=number`. Send exactly three body parameters: `body_1` = customer name, `body_2` = order ID, `body_3` = order amount. The user explicitly confirmed that the existing approved Utility template must be used without an order-date placeholder. Do not add a fourth variable or alter the approved text. The generic adapter also supports other field mappings, but those are not used for this template.
 
-The user supplied MSG91's generated API cURL with `"namespace": null`. Set `MSG91_TEMPLATE_NAMESPACE=null` (the four letters `null`) in Vercel. The adapter converts this to JSON null; it does not send the string `"null"`. An empty/unset variable still blocks sending, so incomplete configuration is never silently inferred. No namespace needs to be invented or requested for this supplied template.
+The latest MSG91-generated API request supplies a real namespace. Copy that exact string into `MSG91_TEMPLATE_NAMESPACE` in Vercel and redeploy; do not retain the `null` value from the earlier generated example. The adapter preserves a supplied namespace verbatim. It also supports explicit `null` for templates whose current generated request actually requires JSON null, but that is no longer the supplied template's configuration. Empty/unset configuration still blocks sending.
 
 For future changes, go to MSG91 > WhatsApp > Templates and select the template's **code** option ([official instructions](https://msg91.com/help/whatsapp/how-to-create-a-template-for-whatsapp)). Match `payload.template.name`, `payload.template.language.code`, `payload.template.namespace` and `integrated_number` to its generated request.
 
@@ -84,8 +84,8 @@ Official references: [WhatsApp](https://docs.msg91.com/whatsapp), [template API]
 The user supplied a three-variable template, its language and an integrated sender. Those account-specific settings are stored only in the local ignored `.env`, with this mapping:
 
 - `MSG91_TEMPLATE_BODY_VARIABLES=customer_name,order_id,total_amount`
-- `MSG91_TEMPLATE_NAMESPACE=null` matches the supplied MSG91-generated request.
+- `MSG91_TEMPLATE_NAMESPACE` matches the real namespace from the latest MSG91-generated request; the value is stored only in server environment settings.
 - `MSG91_TEMPLATE_AMOUNT_FORMAT=number` because the fixed body already includes the rupee symbol.
 - `MSG91_WHATSAPP_ENABLED=false` pending completion of setup.
 
-The supplied body contains a static confirmation sentence and a 5-to-7-day delivery estimate. Exactly three variables are sent; no fourth date variable or payment-status text is appended. The user confirmed Utility approval and explicitly instructed use of this existing template without an order date; this supersedes the original date requirement. The supplied MSG91-generated request confirms a null namespace; local configuration now matches it explicitly. Template name, sender and language also match that request. The supplied template text and delivery estimate are user-provided, not independently verified. No credential has been copied into repository files; production credentials are configured only in Vercel server environment variables. No real message has been sent during automated verification.
+The supplied body contains a static confirmation sentence and a 5-to-7-day delivery estimate. Exactly three variables are sent; no fourth date variable or payment-status text is appended. The user confirmed Utility approval and explicitly instructed use of this existing template without an order date; this supersedes the original date requirement. The refreshed MSG91-generated request supplies a real namespace, replacing the earlier null namespace. Local and production environment configuration must match the latest request. Template name, sender and language also match that request. The supplied template text and delivery estimate are user-provided, not independently verified. No credential has been copied into repository files; production credentials are configured only in Vercel server environment variables. No real message has been sent during automated verification.
