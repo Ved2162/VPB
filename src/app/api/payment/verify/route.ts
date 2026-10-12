@@ -1,4 +1,6 @@
 import { finalizePayment } from '@/lib/payment-finalization';
+import { scheduleOrderNotification } from '@/lib/schedule-order-notification';
+export const maxDuration = 60;
 import { sameOrigin, DeliveryError } from '@/lib/shipment-rules';
 import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
@@ -31,12 +33,14 @@ export async function POST(req: Request) {
     const order = o[0];
 
     if (order.paymentStatus === "paid") {
+      scheduleOrderNotification(order.id);
       return NextResponse.json({ ok: true, orderId: order.id, orderNumber: order.orderNumber, already: true });
     }
 
     const payment = await fetchGatewayPayment(razorpay_payment_id);
     if (payment.order_id !== razorpay_order_id || payment.status !== 'captured') throw new DeliveryError('Payment is awaiting capture. Please retry verification shortly.', 409);
     const confirmed = await finalizePayment({ orderId: razorpay_order_id, paymentId: razorpay_payment_id, userId: me.id, amount: Number(payment.amount), currency: payment.currency, method: payment.method, signature: razorpay_signature });
+    scheduleOrderNotification(confirmed.order.id);
     return NextResponse.json({ ok: true, orderId: order.id, orderNumber: order.orderNumber });
   } catch (e: any) {
     return deliveryFailure(e);

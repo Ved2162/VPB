@@ -110,6 +110,21 @@ export const orderItems = pgTable("order_items", {
   price: integer("price").notNull(),
 });
 
+// One durable confirmation per order. No recipient or message content is logged here.
+export const orderNotifications = pgTable('order_notifications', {
+  orderId: uuid('order_id').primaryKey().references(() => orders.id, { onDelete: 'cascade' }),
+  status: varchar('status', { length: 24 }).default('pending').notNull(),
+  attempts: integer('attempts').default(0).notNull(),
+  nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }).defaultNow().notNull(),
+  claimedAt: timestamp('claimed_at', { withTimezone: true }),
+  acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+  providerRequestId: varchar('provider_request_id', { length: 200 }),
+  errorCode: varchar('error_code', { length: 80 }),
+  resolvedBy: uuid('resolved_by').references(() => users.id),
+  resolution: varchar('resolution', { length: 40 }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, table => [index('order_notifications_due_idx').on(table.status, table.nextAttemptAt)]);
+
 export const reviews = pgTable("reviews", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: uuid("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),

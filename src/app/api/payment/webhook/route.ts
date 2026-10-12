@@ -4,6 +4,8 @@ import { orders } from '@/db/schema';
 import { eq, and, notInArray } from 'drizzle-orm';
 import { verifyWebhookSignature } from '@/lib/razorpay';
 import { finalizePayment } from '@/lib/payment-finalization';
+import { scheduleOrderNotification } from '@/lib/schedule-order-notification';
+export const maxDuration = 60;
 import { readBody } from '@/lib/http-security';
 import { DeliveryError } from '@/lib/shipment-rules';
 import { deliveryFailure } from '@/lib/delivery-server';
@@ -18,7 +20,10 @@ export async function POST(req: Request) {
     const payment = event.payload?.payment?.entity;
     if (event.event === 'payment.captured' && payment?.order_id) {
       const [order] = await db.select({ id: orders.id }).from(orders).where(eq(orders.razorpayOrderId, payment.order_id));
-      if (order) await finalizePayment({ orderId: payment.order_id, paymentId: payment.id, amount: Number(payment.amount), currency: payment.currency, method: payment.method, webhook: true });
+      if (order) {
+        const confirmed = await finalizePayment({ orderId: payment.order_id, paymentId: payment.id, amount: Number(payment.amount), currency: payment.currency, method: payment.method, webhook: true });
+        scheduleOrderNotification(confirmed.order.id);
+      }
     } else if (event.event === 'payment.failed' && payment?.order_id) {
       // The condition is evaluated atomically; a late failure cannot overwrite capture.
       await db.update(orders).set({ paymentStatus: 'failed', updatedAt: new Date() }).where(and(eq(orders.razorpayOrderId, payment.order_id), notInArray(orders.paymentStatus, ['paid', 'refunded'])));

@@ -1,5 +1,5 @@
 import { db } from '@/db';
-import { orders, orderItems, products } from '@/db/schema';
+import { orders, orderItems, products, orderNotifications } from '@/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { DeliveryError } from './shipment-rules';
 import { isUuid } from './http-security';
@@ -30,6 +30,9 @@ export async function finalizePayment(confirmation: Confirmation) {
       }
     }
     const [paid] = await tx.update(orders).set({ paymentStatus: 'paid', orderStatus: 'confirmed', razorpayPaymentId: confirmation.paymentId, razorpaySignature: confirmation.signature || order.razorpaySignature, razorpayWebhookVerified: confirmation.webhook || order.razorpayWebhookVerified, paidAt: order.paidAt || new Date(), paymentMethod: confirmation.method || order.paymentMethod, paymentData: sql`coalesce(${orders.paymentData}, '{}'::jsonb) || ${JSON.stringify({ capturedAmount: confirmation.amount / 100, stockReviewRequired, verifiedAt: new Date().toISOString() })}::jsonb`, updatedAt: new Date() }).where(eq(orders.id, order.id)).returning();
+    // Atomic outbox: only a committed, verified payment can become eligible.
+    // Provider I/O is deliberately outside this transaction.
+    await tx.insert(orderNotifications).values({ orderId: paid.id }).onConflictDoNothing();
     return { order: paid, already: false };
   });
 }

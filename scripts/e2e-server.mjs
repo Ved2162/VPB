@@ -15,13 +15,14 @@ const source = await readFile(new URL('../src/db/schema.ts', import.meta.url), '
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const schema = {};
 new Function('require', 'exports', compiled)(createRequire(import.meta.url), schema);
-const baseline = Object.fromEntries(Object.entries(schema).filter(([name]) => !['deliveryStaff', 'deliveryProviders', 'shipments', 'shipmentHistory', 'deliveryAudit', 'deliveryRateLimits'].includes(name)));
+const baseline = Object.fromEntries(Object.entries(schema).filter(([name]) => !['orderNotifications', 'deliveryStaff', 'deliveryProviders', 'shipments', 'shipmentHistory', 'deliveryAudit', 'deliveryRateLimits'].includes(name)));
 const snapshot = generateDrizzleJson(baseline);
   delete snapshot.tables['public.users'].columns.username;
   delete snapshot.tables['public.users'].uniqueConstraints.users_username_unique;
 await pg.exec((await generateMigration(generateDrizzleJson({}), snapshot)).join('\n'));
 await pg.exec(await readFile(new URL('../migrations/0001_delivery.sql', import.meta.url), 'utf8'));
   await pg.exec(await readFile(new URL('../migrations/0002_admin_username.sql', import.meta.url), 'utf8'));
+  await pg.exec(await readFile(new URL('../migrations/0003_order_notifications.sql', import.meta.url), 'utf8'));
 const passwordHash = await bcrypt.hash('E2e-only-password-2026', 10);
 await pg.query("INSERT INTO users (id,name,phone,password_hash,role) VALUES ('00000000-0000-4000-8000-000000000001','E2E Admin','9000000101',$1,'admin'), ('00000000-0000-4000-8000-000000000002','E2E Customer','9000000102',$1,'customer'), ('00000000-0000-4000-8000-000000000003','Other Customer','9000000103',$1,'customer')", [passwordHash]);
 await pg.exec("UPDATE users SET username='e2eadmin' WHERE role='admin'");

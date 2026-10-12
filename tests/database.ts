@@ -7,7 +7,7 @@ import * as schema from '../src/db/schema';
 export async function createTestDatabase(beforeMigration?: (pg: PGlite) => Promise<void>) {
   const pg = await PGlite.create();
   await pg.exec("SET timezone = 'UTC'");
-  const baseline = Object.fromEntries(Object.entries(schema).filter(([name]) => !['deliveryStaff', 'deliveryProviders', 'shipments', 'shipmentHistory', 'deliveryAudit', 'deliveryRateLimits'].includes(name)));
+  const baseline = Object.fromEntries(Object.entries(schema).filter(([name]) => !['orderNotifications', 'deliveryStaff', 'deliveryProviders', 'shipments', 'shipmentHistory', 'deliveryAudit', 'deliveryRateLimits'].includes(name)));
   const snapshot = generateDrizzleJson(baseline);
   delete snapshot.tables['public.users'].columns.username;
   delete snapshot.tables['public.users'].uniqueConstraints.users_username_unique;
@@ -16,5 +16,6 @@ export async function createTestDatabase(beforeMigration?: (pg: PGlite) => Promi
   await beforeMigration?.(pg);
   await pg.exec(await readFile(new URL('../migrations/0001_delivery.sql', import.meta.url), 'utf8'));
   await pg.exec(await readFile(new URL('../migrations/0002_admin_username.sql', import.meta.url), 'utf8'));
+  await pg.exec(await readFile(new URL('../migrations/0003_order_notifications.sql', import.meta.url), 'utf8'));
   return { pg, db: drizzle(pg) };
 }

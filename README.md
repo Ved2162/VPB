@@ -21,6 +21,7 @@ A full-stack e-commerce web application for **VPB — Verai Patang Bhandar**, a 
 
 ## Features
 
+- Server-side MSG91 WhatsApp confirmations after verified Razorpay capture, with durable retries. See [WhatsApp setup and real-order verification](docs/whatsapp.md).
 - Restricted delivery staff panel, manual courier tracking, shipment history, and admin-managed courier providers. See [Delivery operations and testing](docs/delivery.md).
 - Branded kite loading, OTP feedback, and bounded API loading. See [Loading behavior](docs/loading.md).
 - Security hardening and release setup are documented in [Security and production setup](docs/security.md). Review the deployment checklist before publishing.
