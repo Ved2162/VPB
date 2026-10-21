@@ -5,8 +5,8 @@ import { eq, sql } from "drizzle-orm";
 
 export async function GET() {
   try {
-    const cats = await db.select().from(categories);
-    const counts = await db.select({ categoryId: products.categoryId, n: sql<number>`count(*)` }).from(products).groupBy(products.categoryId);
+    const cats = await db.select().from(categories).where(eq(categories.active, true));
+    const counts = await db.select({ categoryId: products.categoryId, n: sql<number>`count(*)` }).from(products).where(eq(products.active, true)).groupBy(products.categoryId);
     const map: Record<string, number> = {};
     counts.forEach((c: any) => { if (c.categoryId) map[c.categoryId] = Number(c.n); });
     return NextResponse.json({ ok: true, categories: cats.map((c) => ({ ...c, count: map[c.id] || 0 })) });

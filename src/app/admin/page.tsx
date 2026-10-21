@@ -10,6 +10,7 @@ import { LayoutDashboard, Package, Tags, ShoppingCart, Users, Megaphone, LogOut,
 import { useAuth, useToast } from "@/lib/store";
 import { money } from "@/lib/data";
 import { SafeImg } from "@/components/site";
+import { ProductImagePicker } from '@/components/product-image-picker';
 
 export default function Admin() {
   const { me, loading, logout } = useAuth();
@@ -29,6 +30,7 @@ export default function Admin() {
   const [editC, setEditC] = useState<any>(null);
   const [selOrder, setSelOrder] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
   const [loadError, setLoadError] = useState("");
   const dataBusy = useApiActivity("/api/admin");
   const [loaded, setLoaded] = useState<Record<string, boolean>>({});
@@ -64,33 +66,52 @@ export default function Admin() {
   if (!me || me.role !== "admin") return null;
 
   const saveProduct = async () => {
-    if (busy) return;
+    if (busy || uploadingImages) return;
     if (!editP?.name || !editP?.price || !editP?.sku) { toast("Name, price, SKU required"); return; }
     setBusy(true);
+    try {
     const r = await apiFetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "product", id: editP.id || undefined, data: { ...editP, images: typeof editP.images === "string" ? editP.images.split("\n").map((s: string) => s.trim()).filter(Boolean) : editP.images } }) });
-    const j = await r.json(); setBusy(false);
-    if (j.ok) { toast("Product saved — live on site"); setShowP(false); setEditP(null); load(); } else toast(j.error || "Failed");
+    const j = await r.json();
+    if (r.ok && j.ok) { toast("Product saved — live on site"); setShowP(false); setEditP(null); load(); } else toast(j.error || "Failed");
+    } catch { toast('Unable to save product. Please retry.'); } finally { setBusy(false); }
   };
 
   const saveCat = async () => {
     if (busy) return;
     if (!editC?.name) { toast("Name required"); return; }
     setBusy(true);
+    try {
     const r = await apiFetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "category", id: editC.id || undefined, data: editC }) });
     const j = await r.json();
-    setBusy(false);
-    if (j.ok) { toast("Category saved"); setShowC(false); setEditC(null); load(); } else toast(j.error || "Failed");
+    if (r.ok && j.ok) { toast("Category saved"); setShowC(false); setEditC(null); load(); } else toast(j.error || "Failed");
+    } catch { toast('Unable to save category. Please retry.'); } finally { setBusy(false); }
+  };
+
+  const changeRecord = async (url: string, init: RequestInit, message: string) => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      const response = await apiFetch(url, init);
+      const result = await response.json();
+      if (!response.ok || !result.ok) { toast(result.error || 'Unable to save changes'); return; }
+      toast(message); await load();
+    } catch { toast('Unable to save changes. Please retry.'); }
+    finally { setBusy(false); }
   };
 
   const updateOrder = async (patch: any) => {
+    if (busy) return;
+    setBusy(true);
+    try {
     const r = await apiFetch("/api/orders/" + selOrder.id, { method: "PATCH", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify(patch) });
     const j = await r.json();
-    if (j.ok) {
+    if (r.ok && j.ok) {
       toast("Order updated — customer tracking reflects it");
       const fresh = await apiFetch("/api/admin?res=order&id=" + selOrder.id, { credentials: "include" }).then((x) => x.json());
       if (fresh.ok) setSelOrder(fresh.order);
       load("orders");
     } else toast(j.error || "Failed");
+    } catch { toast('Unable to save order. Please retry.'); } finally { setBusy(false); }
   };
 
   const tabs = [["dash", LayoutDashboard, "Dashboard"], ["products", Package, "Products"], ["cats", Tags, "Categories"], ["orders", ShoppingCart, "Orders"], ["customers", Users, "Customers"], ["content", Megaphone, "Content"]];
@@ -164,7 +185,7 @@ export default function Admin() {
                   <td className="text-xs">{p.featured ? "★Feat " : ""}{p.bestseller ? "🔥Best" : ""}{!p.active ? " ⏸Hidden" : ""}</td>
                   <td><span className="flex gap-1.5">
                     <button onClick={() => { setEditP({ ...p, images: (p.images || []).join("\n") }); setShowP(true); }} className="rounded-lg bg-[#f3e6cc] p-2 hover:bg-[#e7d6b8]"><Pencil size={14} /></button>
-                    <button onClick={async () => { if (!confirm("Delete " + p.name + "?")) return; await apiFetch("/api/admin?res=product&id=" + p.id, { method: "DELETE", credentials: "include" }); toast("Deleted"); load(); }} className="rounded-lg bg-red-50 p-2 text-red-700 hover:bg-red-100"><Trash2 size={14} /></button>
+                    <button onClick={async () => { if (!confirm("Delete " + p.name + "?")) return; await changeRecord("/api/admin?res=product&id=" + p.id, { method: "DELETE", credentials: "include" }, "Deleted"); }} className="rounded-lg bg-red-50 p-2 text-red-700 hover:bg-red-100"><Trash2 size={14} /></button>
                   </span></td>
                 </tr>
               ))}</tbody>
@@ -183,7 +204,7 @@ export default function Admin() {
                 <div className="min-w-0 flex-1"><b>{c.name}</b><p className="truncate text-xs text-stone-400">/{c.slug} {c.active ? "" : "• Hidden"}</p>
                   <div className="mt-1.5 flex gap-1.5">
                     <button onClick={() => { setEditC(c); setShowC(true); }} className="rounded-lg bg-[#f3e6cc] px-2.5 py-1 text-xs font-bold">Edit</button>
-                    <button onClick={async () => { if (!confirm("Delete category?")) return; await apiFetch("/api/admin?res=category&id=" + c.id, { method: "DELETE", credentials: "include" }); toast("Deleted"); load(); }} className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">Delete</button>
+                    <button onClick={async () => { if (!confirm("Delete category?")) return; await changeRecord("/api/admin?res=category&id=" + c.id, { method: "DELETE", credentials: "include" }, "Deleted"); }} className="rounded-lg bg-red-50 px-2.5 py-1 text-xs font-bold text-red-700">Delete</button>
                   </div></div>
               </div>
             ))}
@@ -231,7 +252,7 @@ export default function Admin() {
                     {["pending", "paid", "failed", "refunded"].map((s) => (<option key={s} value={s}>{s}</option>))}
                   </select>
                   <Link href="/admin/delivery" className="mt-3 block text-sm font-bold text-[#7a1f1f] underline">Manage delivery staff & courier providers</Link>
-                  <button onClick={() => updateOrder({ orderStatus: selOrder.orderStatus, paymentStatus: selOrder.paymentStatus })} className="btn-primary mt-4 w-full">Save Changes</button>
+                  <button disabled={busy} onClick={() => updateOrder({ orderStatus: selOrder.orderStatus, paymentStatus: selOrder.paymentStatus })} className="btn-primary mt-4 w-full">Save Changes</button>
                 </div>
               )}
             </div>
@@ -250,7 +271,7 @@ export default function Admin() {
                   <td><b>{c.name}</b><br /><span className="text-xs text-stone-400">{c.email} • {c.phone} • {c.role}</span></td>
                   <td>{c.orders}</td><td><b>{money(c.spent)}</b></td>
                   <td><span className={`pill ${c.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>{c.active ? "Active" : "Disabled"}</span></td>
-                  <td>{c.role !== "admin" && <button onClick={async () => { await apiFetch("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "customer-toggle", id: c.id, active: !c.active }) }); toast("Updated"); load(); }} className="rounded-lg bg-[#f3e6cc] px-3 py-1.5 text-xs font-bold">{c.active ? "Disable" : "Enable"}</button>}</td>
+                  <td>{c.role !== "admin" && <button onClick={async () => { await changeRecord("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "customer-toggle", id: c.id, active: !c.active }) }, "Updated"); }} className="rounded-lg bg-[#f3e6cc] px-3 py-1.5 text-xs font-bold">{c.active ? "Disable" : "Enable"}</button>}</td>
                 </tr>
               ))}</tbody>
             </table>
@@ -262,7 +283,7 @@ export default function Admin() {
         <div className="mt-6 grid gap-4 lg:grid-cols-2">
           <div className="card p-5">
             <p className="font-serif text-lg font-bold">Promotional Banners</p>
-            <div className="mt-3 space-y-2">{content.banners?.map((b: any) => (<div key={b.id} className="flex items-center gap-3 rounded-xl border border-[#ecdcb9] p-3 text-sm"><span className="relative h-12 w-20 shrink-0 overflow-hidden rounded-lg bg-[#f6ead2]"><SafeImg src={b.image} alt={b.title} sizes="80px" className="object-cover" /></span><span className="flex-1"><b>{b.title}</b><br /><span className="text-xs text-stone-400">{b.subtitle}</span></span><button onClick={async () => { await apiFetch("/api/admin?res=banner&id=" + b.id, { method: "DELETE", credentials: "include" }); toast("Deleted"); load(); }} className="text-red-600"><Trash2 size={15} /></button></div>))}</div>
+            <div className="mt-3 space-y-2">{content.banners?.map((b: any) => (<div key={b.id} className="flex items-center gap-3 rounded-xl border border-[#ecdcb9] p-3 text-sm"><span className="relative h-12 w-20 shrink-0 overflow-hidden rounded-lg bg-[#f6ead2]"><SafeImg src={b.image} alt={b.title} sizes="80px" className="object-cover" /></span><span className="flex-1"><b>{b.title}</b><br /><span className="text-xs text-stone-400">{b.subtitle}</span></span><button onClick={async () => { await changeRecord("/api/admin?res=banner&id=" + b.id, { method: "DELETE", credentials: "include" }, "Deleted"); }} className="text-red-600"><Trash2 size={15} /></button></div>))}</div>
           </div>
           <div className="card p-5">
             <p className="font-serif text-lg font-bold">Site Content / Announcements</p>
@@ -287,13 +308,13 @@ export default function Admin() {
               <div><p className="label">Cord Count</p><input type="number" value={editP.cordCount} onChange={(e) => setEditP({ ...editP, cordCount: e.target.value })} className="input" /></div>
               <div><p className="label">Category</p><select value={editP.categoryId || ""} onChange={(e) => setEditP({ ...editP, categoryId: e.target.value })} className="input">{cats.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}</select></div>
               <div><p className="label">Stock Status</p><select value={editP.stockStatus || "in_stock"} onChange={(e) => setEditP({ ...editP, stockStatus: e.target.value })} className="input"><option value="in_stock">In Stock</option><option value="out_of_stock">Out of Stock</option></select></div>
-              <div className="sm:col-span-2"><p className="label">Image URLs (one per line)</p><textarea value={typeof editP.images === "string" ? editP.images : (editP.images || []).join("\n")} onChange={(e) => setEditP({ ...editP, images: e.target.value })} className="input min-h-20 font-mono text-xs" placeholder="https://…" /></div>
+              <div className="sm:col-span-2"><ProductImagePicker value={typeof editP.images === "string" ? editP.images : (editP.images || []).join("\n")} onChange={(images) => setEditP((previous: any) => ({ ...previous, images }))} disabled={busy} onUploading={setUploadingImages} /></div>
               <div className="sm:col-span-2"><p className="label">Description</p><textarea value={editP.description || ""} onChange={(e) => setEditP({ ...editP, description: e.target.value })} className="input min-h-20" /></div>
               <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={!!editP.featured} onChange={(e) => setEditP({ ...editP, featured: e.target.checked })} /> Featured</label>
               <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={!!editP.bestseller} onChange={(e) => setEditP({ ...editP, bestseller: e.target.checked })} /> Bestseller</label>
               <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={editP.active !== false} onChange={(e) => setEditP({ ...editP, active: e.target.checked })} /> Active</label>
             </div>
-            <div className="mt-4 flex gap-2"><button onClick={() => { setShowP(false); setEditP(null); }} className="btn-ghost flex-1">Cancel</button><button onClick={saveProduct} disabled={busy} className="btn-primary flex-1 disabled:opacity-60">{busy ? <ButtonLoader label="Saving…" /> : "Save Product"}</button></div>
+            <div className="mt-4 flex gap-2"><button disabled={busy || uploadingImages} onClick={() => { setShowP(false); setEditP(null); }} className="btn-ghost flex-1 disabled:opacity-60">Cancel</button><button onClick={saveProduct} disabled={busy || uploadingImages} className="btn-primary flex-1 disabled:opacity-60">{busy ? <ButtonLoader label="Saving…" /> : "Save Product"}</button></div>
           </div>
         </div>
       )}

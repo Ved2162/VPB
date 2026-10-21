@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyToken } from "@/lib/auth";
 import { sameOrigin } from "@/lib/shipment-rules";
+import { MAX_IMAGE_BYTES } from '@/lib/product-images';
 
 // Routes that require login
 const PROTECTED = ["/account", "/checkout"];
@@ -16,7 +17,8 @@ export function proxy(req: NextRequest) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       try {
         if (pathname !== '/api/payment/webhook') sameOrigin(req);
-        if (Number(req.headers.get('content-length') || 0) > 65536) return NextResponse.json({ ok: false, error: 'Request too large' }, { status: 413 });
+        const limit = pathname === '/api/admin/images' ? MAX_IMAGE_BYTES : 65536;
+        if (Number(req.headers.get('content-length') || 0) > limit) return NextResponse.json({ ok: false, error: 'Request too large' }, { status: 413 });
       } catch { return NextResponse.json({ ok: false, error: 'Cross-origin request rejected' }, { status: 403 }); }
     }
     const res = NextResponse.next(); res.headers.set('Cache-Control', 'no-store'); return res;

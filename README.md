@@ -130,9 +130,9 @@ Open [http://localhost:3000](http://localhost:3000).
 
 ### 6. Seed the database (optional)
 
-Visit `http://localhost:3000/api/seed` to populate products, categories, banners, and a default admin user.
+Seeding requires an authenticated admin POST to `/api/seed` and `ALLOW_SEED=true`. Setup only populates a completely empty catalog; if products, categories, banners or site content already exist, it skips all changes. This preserves admin edits and deletions even when a product's name, SKU and slug have all changed. Disable `ALLOW_SEED` after initial setup.
 
-> **Note:** In production, protect or remove the `/api/seed` endpoint after initial setup.
+Product image uploads support file selection and drag-and-drop in the admin product editor. JPEG, PNG, WebP and GIF files up to 4 MB each are stored in PostgreSQL and served at permanent `/api/images/<content-hash>` URLs. Apply `npm run db:migrate` before deploying this feature. Uploaded images and saved product data have no automatic expiry and survive app redeployments; retain the same production `DATABASE_URL` and include `product_images` in database backups. External image URLs remain supported and depend on their external host.
 
 ---
 

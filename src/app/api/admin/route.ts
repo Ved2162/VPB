@@ -1,9 +1,9 @@
-import { readJson } from '@/lib/http-security';
+import { readJson, isUuid } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { products, categories, orders, orderItems, users, banners, siteContent } from "@/db/schema";
-import { eq, desc, sql, ilike, or } from "drizzle-orm";
-import { getUserFromHeader, slugify } from "@/lib/auth";
+import { eq, desc, sql, or, ne, and } from "drizzle-orm";
+import { slugify } from "@/lib/auth";
 import { sameOrigin, DeliveryError } from "@/lib/shipment-rules";
 import { activeUser, rateLimit, deliveryFailure } from "@/lib/delivery-server";
 
@@ -78,6 +78,7 @@ export async function POST(req: Request) {
   try {
     const body = await readJson(req);
     await rateLimit("admin-write:" + (await activeUser(req)).id, 90, 60);
+    if (body.id && !isUuid(body.id)) throw new DeliveryError('Invalid record ID');
     const res = body.res;
     if (res === "product") {
       const d = body.data;
@@ -92,35 +93,43 @@ export async function POST(req: Request) {
         sku: d.sku, featured: !!d.featured, bestseller: !!d.bestseller, active: d.active !== false,
         images, highlights: d.highlights || [], specs: d.specs || {}, updatedAt: new Date(),
       };
-      if (body.id) { await db.update(products).set(payload).where(eq(products.id, body.id)); return NextResponse.json({ ok: true }); }
+      if (body.id) {
+        const [saved] = await db.update(products).set(payload).where(eq(products.id, body.id)).returning({ id: products.id });
+        if (!saved) return NextResponse.json({ ok: false, error: "Product no longer exists. Reload and try again." }, { status: 404 });
+        return NextResponse.json({ ok: true, id: saved.id });
+      }
       const ex = await db.select().from(products).where(or(eq(products.slug, slug), eq(products.sku, d.sku)));
       if (ex.length) return NextResponse.json({ ok: false, error: "Slug or SKU already exists" }, { status: 400 });
-      await db.insert(products).values(payload);
-      return NextResponse.json({ ok: true });
+      const [saved] = await db.insert(products).values(payload).returning({ id: products.id });
+      return NextResponse.json({ ok: true, id: saved.id });
     }
     if (res === "category") {
       const d = body.data;
-      if (!d.name) return NextResponse.json({ ok: false, error: "Name required" }, { status: 400 });
+      if (!d || typeof d.name !== 'string' || !d.name.trim()) return NextResponse.json({ ok: false, error: "Name required" }, { status: 400 });
       const slug = d.slug || slugify(d.name);
-      if (body.id) { await db.update(categories).set({ name: d.name, slug, description: d.description || null, image: d.image || null, active: d.active !== false }).where(eq(categories.id, body.id)); return NextResponse.json({ ok: true }); }
-      await db.insert(categories).values({ name: d.name, slug, description: d.description || null, image: d.image || null, active: true });
-      return NextResponse.json({ ok: true });
+      const payload = { name: d.name, slug, description: d.description || null, image: d.image || null, active: d.active !== false };
+      const [saved] = body.id ? await db.update(categories).set(payload).where(eq(categories.id, body.id)).returning({ id: categories.id }) : await db.insert(categories).values(payload).returning({ id: categories.id });
+      if (!saved) throw new DeliveryError('Category not found', 404);
+      return NextResponse.json({ ok: true, id: saved.id });
     }
     if (res === "banner") {
       const d = body.data;
-      if (body.id) { await db.update(banners).set({ title: d.title, subtitle: d.subtitle, image: d.image, link: d.link, active: d.active !== false }).where(eq(banners.id, body.id)); }
-      else await db.insert(banners).values({ title: d.title, subtitle: d.subtitle || "", image: d.image || "", link: d.link || "/shop", active: true });
-      return NextResponse.json({ ok: true });
+      if (!d || typeof d.title !== 'string' || !d.title.trim()) throw new DeliveryError('Title required');
+      const payload = { title: d.title, subtitle: d.subtitle || '', image: d.image || '', link: d.link || '/shop', active: d.active !== false };
+      const [saved] = body.id ? await db.update(banners).set(payload).where(eq(banners.id, body.id)).returning({ id: banners.id }) : await db.insert(banners).values(payload).returning({ id: banners.id });
+      if (!saved) throw new DeliveryError('Banner not found', 404);
+      return NextResponse.json({ ok: true, id: saved.id });
     }
     if (res === "content") {
       const { key, value } = body;
-      const ex = await db.select().from(siteContent).where(eq(siteContent.key, key));
-      if (ex.length) await db.update(siteContent).set({ value }).where(eq(siteContent.key, key));
-      else await db.insert(siteContent).values({ key, value });
+      if (typeof key !== 'string' || !key.trim() || key.length > 80 || typeof value !== 'string') throw new DeliveryError('Content key and value required');
+      await db.insert(siteContent).values({ key, value }).onConflictDoUpdate({ target: siteContent.key, set: { value, updatedAt: new Date() } });
       return NextResponse.json({ ok: true });
     }
     if (res === "customer-toggle") {
-      await db.update(users).set({ active: body.active }).where(eq(users.id, body.id));
+      if (!isUuid(body.id) || typeof body.active !== 'boolean') throw new DeliveryError('Customer ID and active status required');
+      const [saved] = await db.update(users).set({ active: body.active }).where(and(eq(users.id, body.id), ne(users.role, 'admin'))).returning({ id: users.id });
+      if (!saved) throw new DeliveryError('Customer not found', 404);
       return NextResponse.json({ ok: true });
     }
     return NextResponse.json({ ok: false, error: "unknown" }, { status: 400 });
@@ -136,9 +145,13 @@ export async function DELETE(req: Request) {
   const res = u.searchParams.get("res");
   const id = u.searchParams.get("id") || "";
   try {
-    if (res === "product") await db.delete(products).where(eq(products.id, id));
-    else if (res === "category") await db.delete(categories).where(eq(categories.id, id));
-    else if (res === "banner") await db.delete(banners).where(eq(banners.id, id));
+    if (!isUuid(id)) throw new DeliveryError('Invalid record ID');
+    let deleted;
+    if (res === "product") [deleted] = await db.delete(products).where(eq(products.id, id)).returning({ id: products.id });
+    else if (res === "category") [deleted] = await db.delete(categories).where(eq(categories.id, id)).returning({ id: categories.id });
+    else if (res === "banner") [deleted] = await db.delete(banners).where(eq(banners.id, id)).returning({ id: banners.id });
+    else throw new DeliveryError('Unknown resource');
+    if (!deleted) throw new DeliveryError('Record not found', 404);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return deliveryFailure(e);

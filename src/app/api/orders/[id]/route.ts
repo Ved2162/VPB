@@ -49,7 +49,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const patch: any = { updatedAt: new Date() };
     if (body.trackingNumber !== undefined || body.courier !== undefined) return NextResponse.json({ ok: false, error: 'Use Courier Shipments to update courier details with an audit trail' }, { status: 400 });
     if (body.orderStatus !== undefined) {
-      if (!['placed', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled'].includes(body.orderStatus)) throw new DeliveryError('Invalid order status');
+      if (!['placed', 'confirmed', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'].includes(body.orderStatus)) throw new DeliveryError('Invalid order status');
       patch.orderStatus = body.orderStatus;
     }
     if (body.paymentStatus !== undefined) {
@@ -60,7 +60,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (order.razorpayOrderId && body.paymentStatus !== order.paymentStatus) throw new DeliveryError('Payment status is managed by the verified payment gateway', 409);
       patch.paymentStatus = body.paymentStatus;
     }
-    await db.update(orders).set(patch).where(eq(orders.id, id));
+    const [saved] = await db.update(orders).set(patch).where(eq(orders.id, id)).returning({ id: orders.id });
+    if (!saved) throw new DeliveryError('Order not found', 404);
     return NextResponse.json({ ok: true });
   } catch (e: any) {
     return deliveryFailure(e);

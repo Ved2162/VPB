@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { categories, products, users, banners, siteContent } from "@/db/schema";
 import { hashPassword, slugify } from "@/lib/auth";
-import { eq } from "drizzle-orm";
+import { eq, or } from "drizzle-orm";
 import { sameOrigin, DeliveryError } from '@/lib/shipment-rules';
 import { activeUser, deliveryFailure } from '@/lib/delivery-server';
 
@@ -42,6 +42,15 @@ export async function POST(req: Request) {
       const me = await activeUser(req);
     if (me.role !== 'admin') return NextResponse.json({ ok: false, error: 'Admin only' }, { status: 403 });
       if (process.env.ALLOW_SEED !== 'true') throw new DeliveryError('Seeding is disabled', 403);
+      // Seed only a new, empty catalog. Re-running setup must not recreate deleted
+      // records or duplicate products whose name, SKU and slug were all edited.
+      const existing = await Promise.all([
+        db.select({ id: products.id }).from(products).limit(1),
+        db.select({ id: categories.id }).from(categories).limit(1),
+        db.select({ id: banners.id }).from(banners).limit(1),
+        db.select({ id: siteContent.id }).from(siteContent).limit(1),
+      ]);
+      if (existing.some(rows => rows.length)) return NextResponse.json({ ok: true, message: 'Existing catalog preserved; setup skipped' });
       for (const key of ['SEED_ADMIN_PASSWORD', 'SEED_DEMO_PASSWORD']) if (process.env[key] && process.env[key]!.length < 12) throw new DeliveryError('Seed passwords must contain at least 12 characters');
     const catDefs = [
       { name: "6 Cord", slug: "6-cord", description: "Everyday 6 cord Bareilly manjha — perfect balance of sharpness and control for daily flying.", image: IMG.blue[0] },
@@ -77,13 +86,11 @@ export async function POST(req: Request) {
 
     for (const p of prodDefs) {
       const slug = slugify(p.name);
-      const ex = await db.select().from(products).where(eq(products.slug, slug));
+      const ex = await db.select().from(products).where(or(eq(products.sku, p.sku), eq(products.slug, slug)));
       const highlights = ["100% pure cotton base", `${p.cord ? p.cord + " cord Bareilly manjha" : "Hand-crafted in Bareilly"}`, "Authentic Bareilly manjha paste, tested every 500m", "Pan-India shipping in 4–6 days"];
       const specs = { Brand: p.brand, "Cord Count": String(p.cord || "—"), Reel: p.reel, SKU: p.sku, Base: "100% Pure Cotton", Origin: "Bareilly, UP" };
-      if (ex.length) {
-        await db.update(products).set({ price: p.price, comparePrice: p.compare, images: p.images, categoryId: catIds[p.cat], bestseller: p.best, featured: p.feat, description: p.desc, highlights, specs, brand: p.brand, cordCount: p.cord, stockQuantity: p.stock }).where(eq(products.id, ex[0].id));
-        continue;
-      }
+      // Setup must never overwrite edits made in the admin panel.
+      if (ex.length) continue;
       await db.insert(products).values({
         name: p.name, slug, description: p.desc, categoryId: catIds[p.cat], brand: p.brand,
         cordCount: p.cord, reelCount: p.reel, length: p.reel, price: p.price, comparePrice: p.compare,

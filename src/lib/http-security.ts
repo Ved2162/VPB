@@ -6,9 +6,9 @@ export function canonicalJson(value: unknown): string {
   if (value && typeof value === 'object') return '{' + Object.keys(value).sort().map(key => JSON.stringify(key) + ':' + canonicalJson((value as Record<string, unknown>)[key])).join(',') + '}';
   return JSON.stringify(value);
 }
-export async function readBody(req: Request, limit = MAX_BODY_BYTES) {
+export async function readBytes(req: Request, limit = MAX_BODY_BYTES) {
   if (Number(req.headers.get('content-length') || 0) > limit) throw new DeliveryError('Request too large', 413);
-  if (!req.body) return '';
+  if (!req.body) return new Uint8Array();
   const reader = req.body.getReader();
   const chunks: Uint8Array[] = []; let size = 0;
   try {
@@ -22,7 +22,10 @@ export async function readBody(req: Request, limit = MAX_BODY_BYTES) {
   } finally { reader.releaseLock(); }
   const bytes = new Uint8Array(size); let offset = 0;
   for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
-  return new TextDecoder().decode(bytes);
+  return bytes;
+}
+export async function readBody(req: Request, limit = MAX_BODY_BYTES) {
+  return new TextDecoder().decode(await readBytes(req, limit));
 }
 export async function readJson(req: Request): Promise<Record<string, any>> {
   const raw = await readBody(req);
