@@ -1,3 +1,4 @@
+import { courierByName, officialTrackingUrl } from '@/lib/couriers';
 import { db } from '@/db';
 import { deliveryProviders, deliveryStaff, orders, shipmentHistory, shipments, users, type ShipmentSnapshot } from '@/db/schema';
 import { and, desc, eq } from 'drizzle-orm';
@@ -61,11 +62,15 @@ export async function PATCH(req: Request, { params }: Context) {
         const [provider] = await tx.select().from(deliveryProviders).where(eq(deliveryProviders.id, after.providerId));
         if (!provider || (!provider.active && after.providerId !== before.providerId)) throw new DeliveryError('Choose an active courier provider');
         after.courierName = provider.name;
-        // Existing links are retained if an admin changes a provider's website later.
-        if (after.trackingUrl && (after.trackingUrl !== before.trackingUrl || after.providerId !== before.providerId)) after.trackingUrl = trackingUrl(after.trackingUrl, provider.trackingUrl);
+        if (!courierByName(provider.name) && (after.providerId !== before.providerId || after.docketNumber !== before.docketNumber)) throw new DeliveryError('Choose Shree Anjani or Shree Maruti');
+        after.trackingUrl = officialTrackingUrl(provider.name, after.docketNumber);
+        if ('trackingUrl' in body && body.trackingUrl && body.trackingUrl !== after.trackingUrl && body.trackingUrl !== courierByName(provider.name)?.baseUrl) throw new DeliveryError('Tracking link does not match the selected courier and docket');
       } else if ('providerId' in body) {
         after.courierName = null;
+        after.trackingUrl = '';
       }
+      if (after.docketNumber && !after.providerId) throw new DeliveryError('Select a courier before adding a docket number');
+      if (after.providerId && !after.docketNumber && ('providerId' in body || 'docketNumber' in body)) throw new DeliveryError('Docket number is required for the selected courier');
       if (after.trackingUrl && !after.providerId) throw new DeliveryError('Select a courier before adding a tracking URL');
       if (JSON.stringify(before) === JSON.stringify(after)) return { changed: false, version: existing?.version || 0 };
       if (body.version !== (existing?.version || 0)) throw new DeliveryError('Another staff member changed this shipment. Refresh and try again.', 409);

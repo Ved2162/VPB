@@ -1,4 +1,5 @@
 "use client";
+import { COURIERS } from '@/lib/couriers';
 import { useState } from 'react';
 import { deliveryRequest, DeliveryRequestError, type Provider, type Settings, type Staff } from './delivery-types';
 import DeliveryReauth from './delivery-reauth';
@@ -42,12 +43,12 @@ export default function DeliverySettings({ settings, reload }: { settings: Setti
     {pending && <DeliveryReauth cancel={() => setPending(null)} done={() => { const action = pending; setPending(null); void save(action.resource, action.data); }} />}
     {message && <p role="status" className="mb-4 rounded-xl bg-green-50 p-3 text-sm text-green-800">{message}</p>}{error && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
     <div className="grid gap-6 xl:grid-cols-2">
-      <div className="card p-5 sm:p-6"><h2 className="font-serif text-xl font-bold">Courier providers</h2><p className="mt-1 text-sm text-stone-500">Configure the couriers you use and their official tracking websites.</p>
-        <ul className="my-4 space-y-2">{settings.providers.map(p => <li key={p.id} className="flex items-center justify-between gap-2 rounded-xl bg-[#f9f2e6] p-3 text-sm"><span className="min-w-0 break-words"><b>{p.name}</b><span className="block text-xs">{p.active ? 'Active' : 'Inactive'}</span></span><button type="button" className="btn-ghost !px-3 !py-2" onClick={() => setProvider(p)}>Edit {p.name}</button></li>)}</ul>
+      <div className="card p-5 sm:p-6"><h2 className="font-serif text-xl font-bold">Courier providers</h2><p className="mt-1 text-sm text-stone-500">Enable the official couriers used for new shipments. Existing shipment history is retained.</p>
+        <ul className="my-4 space-y-2">{settings.providers.map(p => <li key={p.id} className="flex items-center justify-between gap-2 rounded-xl bg-[#f9f2e6] p-3 text-sm"><span className="min-w-0 break-words"><b>{p.name}</b><span className="block text-xs">{p.active ? 'Active' : 'Inactive'}</span></span><button type="button" disabled={!COURIERS.some(c => c.name === p.name)} className="btn-ghost !px-3 !py-2" onClick={() => setProvider(p)}>Edit {p.name}</button></li>)}</ul>
         <form className="space-y-3 border-t border-[#e7d6b8] pt-4" onSubmit={e => { e.preventDefault(); void save('provider', { id: provider.id, name: provider.name, trackingUrl: provider.trackingUrl, active: provider.active }); }}>
           <h3 className="font-bold">{provider.id ? 'Edit provider' : 'Add provider'}</h3>
-          <label className="block text-sm">Courier name<input required maxLength={80} className="input mt-1" value={provider.name} onChange={e => setProvider({ ...provider, name: e.target.value })} /></label>
-          <label className="block text-sm">Official HTTPS tracking URL<input required type="url" className="input mt-1" value={provider.trackingUrl} onChange={e => setProvider({ ...provider, trackingUrl: e.target.value })} /></label>
+          <label className="block text-sm">Courier name<select required className="input mt-1" value={provider.name} disabled={!!provider.id} onChange={e => { const c = COURIERS.find(c => c.name === e.target.value); const existing = settings.providers.find(p => p.name === c?.name); setProvider({ id: existing?.id, name: c?.name || '', trackingUrl: c?.baseUrl || '', active: existing?.active ?? true }); }}><option value="">Select courier</option>{COURIERS.map(c => <option key={c.name}>{c.name}</option>)}</select></label>
+          <label className="block text-sm">Official HTTPS tracking URL<input required readOnly type="url" className="input mt-1" value={provider.trackingUrl} /></label>
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={provider.active} onChange={e => setProvider({ ...provider, active: e.target.checked })} />Active provider</label>
           <div className="flex gap-3"><button className="btn-primary" disabled={busy}>{busy && action === 'provider' ? <ButtonLoader label="Saving provider…" /> : 'Save provider'}</button>{provider.id && <button type="button" className="btn-ghost" onClick={() => setProvider({ name: '', trackingUrl: '', active: true })}>Cancel edit</button>}</div>
         </form>

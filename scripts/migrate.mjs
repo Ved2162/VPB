@@ -9,7 +9,7 @@ try {
   await client.query('BEGIN');
   await client.query("SELECT pg_advisory_xact_lock(72641011)");
   await client.query('CREATE TABLE IF NOT EXISTS vpb_migrations (name text PRIMARY KEY, checksum text NOT NULL, applied_at timestamptz NOT NULL DEFAULT now())');
-  for (const name of ['0001_delivery.sql', '0002_admin_username.sql', '0003_order_notifications.sql', '0004_invoices.sql', '0005_product_images.sql']) {
+  for (const name of ['0001_delivery.sql', '0002_admin_username.sql', '0003_order_notifications.sql', '0004_invoices.sql', '0005_product_images.sql', '0006_official_couriers.sql']) {
   const sql = (await readFile(new URL('../migrations/' + name, import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
   const checksum = createHash('sha256').update(sql).digest('hex');
   const windowsChecksum = createHash('sha256').update(sql.replace(/\n/g, '\r\n')).digest('hex');

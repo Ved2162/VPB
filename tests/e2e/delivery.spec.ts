@@ -16,10 +16,6 @@ test('admin → delivery staff → customer, with responsive layout and access c
   await expect(page.getByRole('region', { name: 'Shipment results' })).toHaveCount(0);
   await expect(page.getByRole('region', { name: 'Shipment summary' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Open Next.js Dev Tools', exact: true })).toHaveCount(0);
-  await page.getByLabel('Courier name', { exact: true }).filter({ visible: true }).fill('Manual Courier');
-  await page.getByLabel('Official HTTPS tracking URL').filter({ visible: true }).fill('https://www.delhivery.com/track');
-  await page.getByRole('button', { name: 'Save provider' }).click();
-  await expect(page.getByText('Courier provider saved.')).toBeVisible();
   await page.getByLabel('Staff name', { exact: true }).filter({ visible: true }).fill('Delivery Operator');
   await page.getByLabel('Staff mobile number').filter({ visible: true }).fill('9000000104');
   await page.getByLabel('Password (at least 12 characters)', { exact: true }).filter({ visible: true }).fill(password);
@@ -61,17 +57,16 @@ test('admin → delivery staff → customer, with responsive layout and access c
   await expect(staffPage.getByRole('button', { name: 'Staff & couriers' })).toHaveCount(0);
   await staffPage.getByRole('button', { name: 'Edit courier', exact: true }).filter({ visible: true }).click();
   await expect(staffPage.getByLabel('Assigned delivery staff').filter({ visible: true })).toHaveCount(0);
-  await staffPage.getByLabel('Search courier companies').filter({ visible: true }).fill('Manual');
-  await staffPage.getByLabel('Courier company', { exact: true }).filter({ visible: true }).selectOption({ label: 'Manual Courier' });
+  await staffPage.getByLabel('Search courier companies').filter({ visible: true }).fill('Shree');
+  await staffPage.getByLabel('Courier company', { exact: true }).filter({ visible: true }).selectOption({ label: 'Shree Maruti' });
   await staffPage.getByLabel('Docket / AWB number').filter({ visible: true }).fill('AWB-E2E-001');
-  await staffPage.getByLabel('Courier tracking URL').filter({ visible: true }).fill('https://www.delhivery.com/track/AWB-E2E-001');
   await staffPage.getByRole('dialog').getByLabel('Shipment status').filter({ visible: true }).selectOption('ASSIGNED');
   await staffPage.getByLabel('Internal delivery notes').filter({ visible: true }).fill('Private warehouse note');
   await staffPage.screenshot({ path: 'test-results/editor-mobile.png', fullPage: true });
   await staffPage.getByRole('button', { name: 'Save Changes' }).click();
   await expect(staffPage.getByRole('dialog')).not.toBeVisible();
   await staffPage.reload();
-  await expect(staffPage.getByText('Manual Courier · AWB-E2E-001', { exact: true })).toBeVisible();
+  await expect(staffPage.getByText('Shree Maruti · AWB-E2E-001', { exact: true })).toBeVisible();
   await staffPage.screenshot({ path: 'test-results/staff-mobile.png', fullPage: true });
   expect(await staffPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   for (const status of ['PICKUP_PENDING', 'PICKED_UP', 'IN_TRANSIT']) {
@@ -86,7 +81,7 @@ test('admin → delivery staff → customer, with responsive layout and access c
   const persisted = await (await staffContext.request.get('/api/delivery/shipments')).json();
   expect(persisted.rows[0].status).toBe('IN_TRANSIT');
   expect(persisted.rows[0].docketNumber).toBe('AWB-E2E-001');
-  expect(persisted.rows[0].trackingUrl).toBe('https://www.delhivery.com/track/AWB-E2E-001');
+  expect(persisted.rows[0].trackingUrl).toBe('https://shreemaruti.com/track-shipment/?awb=AWB-E2E-001');
   expect((await staffContext.request.get('/api/admin')).status()).toBe(403);
   const denied = await staffContext.request.get('/admin');
   expect(denied.url()).toContain('/admin/login');
@@ -98,7 +93,7 @@ test('admin → delivery staff → customer, with responsive layout and access c
   await customerPage.goto('/track-order?num=E2E-001');
   await customerPage.getByRole('button', { name: 'Track', exact: true }).click();
   await expect(customerPage.getByRole('region', { name: 'Shipment tracking' })).toContainText('In transit');
-  await expect(customerPage.getByRole('link', { name: 'Open courier tracking' })).toHaveAttribute('href', 'https://www.delhivery.com/track/AWB-E2E-001');
+  await expect(customerPage.getByRole('link', { name: 'Track Shipment' })).toHaveAttribute('href', 'https://shreemaruti.com/track-shipment/?awb=AWB-E2E-001');
   await expect(customerPage.getByText('Private warehouse note')).toHaveCount(0);
   await expect(customerPage.getByText('Delivery Operator')).toHaveCount(0);
   await customerPage.screenshot({ path: 'test-results/customer-tracking.png', fullPage: true });

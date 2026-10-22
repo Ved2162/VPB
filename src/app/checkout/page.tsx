@@ -181,7 +181,7 @@ export default function CheckoutPage() {
           <p className="mt-1 text-stone-500">Thank you for shopping with VPB.</p>
           <div className="mt-4 rounded-2xl bg-[#fff6e3] p-4 text-sm">
             <p>Order <b>{order.orderNumber}</b></p><p>Total paid <b className="text-[#7a1f1f]">{money(order.total)}</b> via {order.paymentMethod?.toUpperCase()}</p>
-            <p>Tracking <b>{order.trackingNumber}</b> • {order.courier}</p>
+            <p>Tracking details will be available after dispatch.</p>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-2"><Link href={`/track-order?num=${order.orderNumber}`} className="btn-ghost">Track Order</Link><Link href="/account" className="btn-primary">My Orders</Link></div>
           <InvoiceActions orderId={order.id} />

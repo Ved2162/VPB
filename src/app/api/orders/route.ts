@@ -1,6 +1,7 @@
+import { officialTrackingUrl } from '@/lib/couriers';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, orderItems, products } from "@/db/schema";
+import { orders, orderItems, products, shipments, shipmentHistory } from "@/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
 import { getUserFromHeader, orderNumber } from "@/lib/auth";
 import { activeUser, deliveryFailure } from '@/lib/delivery-server';
@@ -20,7 +21,17 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, orders: all });
     }
     const mine = await db.select().from(orders).where(eq(orders.userId, me.id)).orderBy(desc(orders.createdAt));
-    const withItems = await Promise.all(mine.map(async (o) => ({ ...publicOrder(o), items: await db.select().from(orderItems).where(eq(orderItems.orderId, o.id)) })));
+    const withItems = await Promise.all(mine.map(async (o) => {
+      const [shipment] = await db.select().from(shipments).where(eq(shipments.orderId, o.id));
+      const history = await db.select().from(shipmentHistory).where(eq(shipmentHistory.orderId, o.id)).orderBy(desc(shipmentHistory.createdAt), desc(shipmentHistory.id)).limit(200);
+      const courierName = shipment?.courierName ?? o.courier;
+      const docketNumber = shipment?.docketNumber ?? o.trackingNumber ?? '';
+      return { ...publicOrder(o), items: await db.select().from(orderItems).where(eq(orderItems.orderId, o.id)), shipment: {
+        status: shipment?.status || 'NOT_ASSIGNED', courierName, docketNumber,
+        trackingUrl: officialTrackingUrl(courierName, docketNumber), updatedAt: shipment?.updatedAt || null,
+        history: history.map(h => ({ id: h.id, previousStatus: h.before.status, status: h.after.status, courierName: h.after.courierName, docketNumber: h.after.docketNumber, createdAt: h.createdAt })),
+      } };
+    }));
     return NextResponse.json({ ok: true, orders: withItems });
   } catch (e: any) {
     return deliveryFailure(e);

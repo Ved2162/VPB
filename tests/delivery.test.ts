@@ -66,7 +66,7 @@ describe('Real PostgreSQL delivery workflow', () => {
     const response = await settings.POST(request(admin, '/api/delivery/settings', { resource: 'staff', name: 'Test Delivery', phone: '9000000004', password, active: true, allOrders: false }));
     expect(response.status).toBe(200); staff = (await response.json()).staff;
     expect(staff).not.toHaveProperty('passwordHash');
-    const courier = await settings.POST(request(admin, '/api/delivery/settings', { resource: 'provider', name: 'Test Courier', trackingUrl: 'https://www.delhivery.com/track', active: true }));
+    const courier = await settings.POST(request(admin, '/api/delivery/settings', { resource: 'provider', id: (await database.db.select().from(schema.deliveryProviders).where(eq(schema.deliveryProviders.name, 'Shree Maruti')))[0].id, name: 'Shree Maruti', trackingUrl: 'https://shreemaruti.com/track-shipment/', active: true }));
     expect(courier.status).toBe(200); provider = (await courier.json()).provider;
     expect((await database.db.select().from(schema.deliveryAudit)).length).toBe(2);
   });
@@ -84,7 +84,7 @@ describe('Real PostgreSQL delivery workflow', () => {
   });
   test('admin assigns an order; delivery staff can persist courier details', async () => {
     expect((await patch({ version: 0, assignedTo: staff.id }, admin)).status).toBe(200);
-    const response = await patch({ version: 1, providerId: provider.id, trackingUrl: provider.trackingUrl + '/AWB123', docketNumber: 'AWB123', status: 'ASSIGNED', internalNotes: 'Staff-only note' });
+    const response = await patch({ version: 1, providerId: provider.id, trackingUrl: provider.trackingUrl + '?awb=AWB123', docketNumber: 'AWB123', status: 'ASSIGNED', internalNotes: 'Staff-only note' });
     expect(response.status).toBe(200);
     const data = await (await listing.GET(request(staffUser(), '/api/delivery/shipments'))).json();
     expect(data.total).toBe(1); expect(data.rows[0].docketNumber).toBe('AWB123'); expect(data.rows[0].items[0].quantity).toBe(2);
@@ -192,7 +192,7 @@ describe('Real PostgreSQL delivery workflow', () => {
 
 test('URL and transition rules cover all statuses and unsafe destinations', () => {
   for (const url of ['ftp://example.com', 'https://10.0.0.1', 'https://[::1]', 'https://tracking.local', 'https://www.delhivery.com:8443']) expect(() => trackingUrl(url)).toThrow();
-  expect(trackingUrl('https://www.delhivery.com/track?id=123')).toContain('https://www.delhivery.com/');
+  expect(trackingUrl('https://shreemaruti.com/track-shipment/?awb=123')).toBe('https://shreemaruti.com/track-shipment/?awb=123');
   for (const status of SHIPMENT_STATUSES) expect(() => validateTransition(status, status)).not.toThrow();
   expect(() => validateTransition('IN_TRANSIT', 'RETURN_TO_ORIGIN')).not.toThrow();
   expect(() => validateTransition('ASSIGNED', 'CANCELLED')).not.toThrow();

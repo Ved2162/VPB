@@ -1,4 +1,7 @@
 "use client";
+import { courierByName, validDocket } from '@/lib/couriers';
+import { CourierTracking } from './courier-tracking';
+
 import { SectionLoader, ButtonLoader } from "@/components/loading";
 import { useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
@@ -9,7 +12,7 @@ import type { ShipmentSnapshot } from '@/db/schema';
 type History = { id: string; actorName: string; createdAt: string; before: ShipmentSnapshot; after: ShipmentSnapshot };
 export default function DeliveryEditor({ row, settings, close, saved }: { row: ShipmentRow; settings: Settings; close: () => void; saved: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
-  const [form, setForm] = useState({ providerId: row.providerId || '', trackingUrl: row.trackingUrl, docketNumber: row.docketNumber, status: row.status, internalNotes: row.internalNotes, assignedTo: row.assignedTo || '' });
+  const [form, setForm] = useState({ providerId: row.providerId || '', docketNumber: row.docketNumber, status: row.status, internalNotes: row.internalNotes, assignedTo: row.assignedTo || '' });
   const [query, setQuery] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -25,8 +28,11 @@ export default function DeliveryEditor({ row, settings, close, saved }: { row: S
   const field = (key: keyof typeof form, value: string) => setForm(prev => ({ ...prev, [key]: value }));
   return <dialog ref={dialog} aria-labelledby="courier-editor-title" onCancel={e => { if (busy) e.preventDefault(); else close(); }} className="m-auto max-h-[90dvh] w-[calc(100%-2rem)] max-w-2xl overflow-y-auto rounded-3xl bg-[#fffdf8] p-0 text-[#291a13] shadow-2xl backdrop:bg-black/50">
     <div className="flex items-start justify-between gap-4 border-b border-[#e7d6b8] p-5 sm:p-7"><div><p className="text-xs font-bold tracking-widest text-[#7a1f1f]">{row.orderNumber}</p><h2 id="courier-editor-title" className="font-serif text-2xl font-bold">Edit Courier Info</h2></div><button disabled={busy} onClick={close} aria-label="Close courier editor" className="rounded-lg p-2 hover:bg-stone-100"><X size={20} /></button></div>
+    <div className="px-5 pt-4 text-sm sm:px-7"><p className="font-semibold">{row.customerName || row.shippingAddress.name}</p><p>{['addressLine', 'landmark', 'city', 'state', 'pincode'].map(k => row.shippingAddress[k]).filter(Boolean).join(', ')}</p></div>
     <form className="space-y-4 p-5 sm:p-7" onSubmit={async e => {
-      e.preventDefault(); setBusy(true); setError('');
+      e.preventDefault();
+      if ((form.providerId && !validDocket(form.docketNumber.trim())) || (!form.providerId && form.docketNumber.trim())) { setError('Select a courier and enter a valid docket / AWB number.'); return; }
+      setBusy(true); setError('');
       try {
         const { assignedTo, ...fields } = form;
         await deliveryRequest('/api/delivery/shipments/' + row.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...fields, providerId: fields.providerId || null, version: row.version, ...(settings.me.role === 'admin' ? { assignedTo: assignedTo || null } : {}) }) });
@@ -36,12 +42,11 @@ export default function DeliveryEditor({ row, settings, close, saved }: { row: S
     }}>
       {settings.me.role === 'admin' && <label className="block text-sm font-semibold">Assigned delivery staff<select className="input mt-1" value={form.assignedTo} onChange={e => field('assignedTo', e.target.value)}><option value="">Unassigned</option>{settings.staff.filter(s => s.active || s.id === form.assignedTo).map(s => <option key={s.id} value={s.id} disabled={!s.active}>{s.name}{!s.active ? ' (disabled)' : ''}</option>)}</select></label>}
       <fieldset><legend className="text-sm font-semibold">Courier company</legend><input aria-label="Search courier companies" placeholder="Search courier companies" value={query} onChange={e => setQuery(e.target.value)} className="input mt-1" /><select aria-label="Courier company" className="input mt-2" value={form.providerId} onChange={e => {
-        const provider = settings.providers.find(p => p.id === e.target.value);
-        setForm(prev => ({ ...prev, providerId: e.target.value, trackingUrl: provider?.trackingUrl || '' }));
-      }}><option value="">Select courier</option>{settings.providers.filter(p => (p.active && p.name.toLowerCase().includes(query.toLowerCase())) || p.id === form.providerId).map(p => <option key={p.id} value={p.id} disabled={!p.active && p.id !== row.providerId}>{p.name}{!p.active ? ' (inactive)' : ''}</option>)}</select></fieldset>
+        setForm(prev => ({ ...prev, providerId: e.target.value }));
+      }}><option value="">Select courier</option>{settings.providers.filter(p => (p.active && !!courierByName(p.name) && p.name.toLowerCase().includes(query.toLowerCase())) || p.id === form.providerId).map(p => <option key={p.id} value={p.id} disabled={!courierByName(p.name) || (!p.active && p.id !== row.providerId)}>{p.name}{!p.active ? ' (inactive)' : ''}</option>)}</select></fieldset>
       {!settings.providers.some(p => p.active) && <p className="text-sm text-amber-800">The main admin must configure a courier provider before assigning courier information.</p>}
-      <label className="block text-sm font-semibold">Courier tracking URL<input type="url" maxLength={2048} value={form.trackingUrl} onChange={e => field('trackingUrl', e.target.value)} placeholder="https://courier-website.com/track" className="input mt-1" /><span className="mt-1 block text-xs font-normal text-stone-500">Use the configured courier website. Tracking is updated manually.</span></label>
-      <div className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-semibold">Docket / AWB number<input value={form.docketNumber} maxLength={80} onChange={e => field('docketNumber', e.target.value)} className="input mt-1" /></label><label className="block text-sm font-semibold">Shipment status<select value={form.status} onChange={e => field('status', e.target.value)} className="input mt-1">{[row.status, ...(TRANSITIONS[row.status as ShipmentStatus] || [])].map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}</select></label></div>
+      <CourierTracking courier={settings.providers.find(p => p.id === form.providerId)?.name || null} docket={form.docketNumber.trim()} />
+      <div className="grid gap-4 sm:grid-cols-2"><label className="block text-sm font-semibold">Docket / AWB number<input required={!!form.providerId} value={form.docketNumber} maxLength={80} onChange={e => field('docketNumber', e.target.value)} className="input mt-1" /></label><label className="block text-sm font-semibold">Shipment status<select value={form.status} onChange={e => field('status', e.target.value)} className="input mt-1">{[row.status, ...(TRANSITIONS[row.status as ShipmentStatus] || [])].map(s => <option key={s} value={s}>{statusLabel(s)}</option>)}</select></label></div>
       <label className="block text-sm font-semibold">Internal delivery notes<textarea value={form.internalNotes} onChange={e => field('internalNotes', e.target.value)} maxLength={2000} rows={3} className="input mt-1" /><span className="text-xs font-normal text-stone-500">Visible only to authorized staff.</span></label>
       {error && <p role="alert" className="rounded-xl bg-red-50 p-3 text-sm text-red-800">{error}</p>}
       <div className="flex justify-end gap-3"><button type="button" disabled={busy} onClick={close} className="btn-ghost">Cancel</button><button disabled={busy} className="btn-primary disabled:opacity-50">{busy ? <ButtonLoader label='Saving…' /> : 'Save Changes'}</button></div>

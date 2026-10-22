@@ -1,3 +1,5 @@
+import { COURIERS, officialTrackingUrl } from './couriers';
+
 export const SHIPMENT_STATUSES = ['NOT_ASSIGNED', 'ASSIGNED', 'PICKUP_PENDING', 'PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERED', 'DELIVERY_FAILED', 'RETURN_TO_ORIGIN', 'CANCELLED'] as const;
 export type ShipmentStatus = typeof SHIPMENT_STATUSES[number];
 export const TRANSITIONS: Record<ShipmentStatus, readonly ShipmentStatus[]> = {
@@ -27,16 +29,17 @@ export function textField(value: unknown, name: string, max: number, required = 
 export function trackingUrl(value: unknown, providerUrl?: string): string {
   const raw = textField(value, 'tracking URL', 2048);
   if (!raw) return '';
-  let url: URL;
-  try { url = new URL(raw); } catch { throw new DeliveryError('Enter a valid HTTPS tracking URL'); }
-  const host = url.hostname.toLowerCase();
-  if (url.protocol !== 'https:' || url.username || url.password || (url.port && url.port !== '443') ||
-      !/^(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,63}$/.test(host) ||
-      /(?:^|\.)(localhost|local|internal|test|invalid|example)$/.test(host)) {
-    throw new DeliveryError('Use an HTTPS URL on a public courier website, without credentials or custom ports');
-  }
-  if (providerUrl && host !== new URL(providerUrl).hostname) throw new DeliveryError('Tracking URL must use the configured courier website');
-  return url.href;
+  const allowed = COURIERS.some(c => {
+    if (providerUrl && providerUrl !== c.baseUrl) return false;
+    if (raw === c.baseUrl) return true;
+    try {
+      const url = new URL(raw);
+      const docket = url.searchParams.get('awb');
+      return !!docket && raw === officialTrackingUrl(c.name, docket);
+    } catch { return false; }
+  });
+  if (!allowed) throw new DeliveryError('Choose an official Shree Anjani or Shree Maruti tracking link');
+  return raw;
 }
 export function validateTransition(before: string, after: unknown): asserts after is ShipmentStatus {
   if (typeof after !== 'string' || !SHIPMENT_STATUSES.includes(after as ShipmentStatus)) throw new DeliveryError('Invalid shipment status');

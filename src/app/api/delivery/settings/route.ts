@@ -1,3 +1,4 @@
+import { courierByName } from '@/lib/couriers';
 import { db } from '@/db';
 import { deliveryAudit, deliveryProviders, deliveryStaff, users, shipments, shipmentHistory, type ShipmentSnapshot } from '@/db/schema';
 import { eq, sql } from 'drizzle-orm';
@@ -50,13 +51,14 @@ export async function POST(req: Request) {
       exactKeys(body, ['resource', 'id', 'name', 'trackingUrl', 'active']);
       const name = textField(body.name, 'courier name', 80, true);
       const url = trackingUrl(body.trackingUrl);
-      if (!url) throw new DeliveryError('Courier tracking website is required');
+      if (!courierByName(name) || courierByName(name)!.baseUrl !== url) throw new DeliveryError('Choose an official courier and its configured base URL');
       if (typeof body.active !== 'boolean') throw new DeliveryError('Active must be true or false');
       const id = body.id ? uuid(body.id) : undefined;
       const active = body.active;
       const provider = await db.transaction(async tx => {
         const [before] = id ? await tx.select().from(deliveryProviders).where(eq(deliveryProviders.id, id)).for('update') : [];
         if (id && !before) throw new DeliveryError('Courier not found', 404);
+        if (before && before.name !== name) throw new DeliveryError('Courier identity cannot be changed');
         const payload = { name, trackingUrl: url, active, updatedAt: new Date() };
         const [after] = id ? await tx.update(deliveryProviders).set(payload).where(eq(deliveryProviders.id, id)).returning() : await tx.insert(deliveryProviders).values(payload).returning();
         await tx.insert(deliveryAudit).values({ actorId: me.id, resource: 'provider', resourceId: after.id, changes: { before: before || null, after } });

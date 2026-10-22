@@ -1,3 +1,4 @@
+import { officialTrackingUrl } from '@/lib/couriers';
 import { sameOrigin, DeliveryError } from '@/lib/shipment-rules';
 import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
@@ -29,7 +30,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const history = await db.select().from(shipmentHistory).where(eq(shipmentHistory.orderId, o.id)).orderBy(desc(shipmentHistory.createdAt), desc(shipmentHistory.id)).limit(200);
     const publicShipment = {
       status: shipment?.status || 'NOT_ASSIGNED', courierName: shipment?.courierName ?? o.courier,
-      docketNumber: shipment?.docketNumber ?? o.trackingNumber ?? '', trackingUrl: shipment?.trackingUrl || '', updatedAt: shipment?.updatedAt || null,
+      docketNumber: shipment?.docketNumber ?? o.trackingNumber ?? '', trackingUrl: officialTrackingUrl(shipment?.courierName ?? o.courier, shipment?.docketNumber ?? o.trackingNumber), updatedAt: shipment?.updatedAt || null,
       history: history.map(h => ({ id: h.id, previousStatus: h.before.status, status: h.after.status, courierName: h.after.courierName, docketNumber: h.after.docketNumber, createdAt: h.createdAt })),
     };
     const { razorpaySignature: _signature, paymentData: _paymentData, cartSnapshot: _cart, ...safeOrder } = o;

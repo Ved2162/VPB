@@ -1,3 +1,4 @@
+import { officialTrackingUrl } from '@/lib/couriers';
 import { db } from '@/db';
 import { orderItems, orders, shipments } from '@/db/schema';
 import { and, asc, desc, eq, gte, ilike, inArray, lt, or, sql } from 'drizzle-orm';
@@ -59,6 +60,6 @@ export async function GET(req: Request) {
     const summaryRequest = db.select({ status: sql<string>`coalesce(${shipments.status}, 'NOT_ASSIGNED')`, count: sql<number>`count(*)::int` }).from(orders).leftJoin(shipments, eq(shipments.orderId, orders.id)).where(scope).groupBy(sql`coalesce(${shipments.status}, 'NOT_ASSIGNED')`);
     const [[count], rows, summary] = await Promise.all([countRequest, rowsRequest, summaryRequest]);
     const items = rows.length ? await db.select({ id: orderItems.id, orderId: orderItems.orderId, productName: orderItems.productName, quantity: orderItems.quantity }).from(orderItems).where(inArray(orderItems.orderId, rows.map(r => r.id))) : [];
-    return Response.json({ ok: true, rows: rows.map(row => ({ ...row, items: items.filter(i => i.orderId === row.id) })), total: count.total, page, pageSize, summary });
+    return Response.json({ ok: true, rows: rows.map(row => ({ ...row, trackingUrl: officialTrackingUrl(row.courier, row.docketNumber), items: items.filter(i => i.orderId === row.id) })), total: count.total, page, pageSize, summary });
   } catch (error) { return deliveryFailure(error); }
 }
