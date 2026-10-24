@@ -65,6 +65,9 @@ test('production headers, secure cookies and disabled unused image proxy are enf
   expect(response.headers()['content-security-policy']).toContain("object-src 'none'");
   expect((await request.get('/.env')).status()).toBe(404);
   expect([400,404]).toContain((await request.get('/_next/image?url=%2Fimages%2Fmanjha%2Fm01.png&w=640&q=75')).status());
+  const originalImage = await request.get('/images/manjha/m01.png');
+  expect(originalImage.status()).toBe(200);
+  expect(originalImage.headers()['content-type']).toContain('image/');
   const login = await context.request.post('/api/auth', { data: { action: 'login', phone: '9000000112', password: 'E2e-only-password-2026' } });
   expect(login.ok()).toBe(true);
   const session = (await context.cookies()).find(c => c.name === 'vpb_token')!;

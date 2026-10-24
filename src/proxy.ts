@@ -13,6 +13,8 @@ const AUTH_ROUTES = ["/login", "/register"];
 
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
+  // Vercel can serve this endpoint even when Next's image optimization is unused.
+  if (pathname === '/_next/image') return new NextResponse(null, { status: 404 });
   if (pathname.startsWith('/api/')) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       try {
@@ -69,6 +71,7 @@ export function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/_next/image",
     "/api/:path*",
     "/login",
     "/register",
