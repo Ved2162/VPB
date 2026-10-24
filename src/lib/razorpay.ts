@@ -1,3 +1,4 @@
+import 'server-only';
 import Razorpay from "razorpay";
 import crypto from "crypto";
 

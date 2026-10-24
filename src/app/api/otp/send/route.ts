@@ -4,7 +4,7 @@ import { otpRequests, users } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { randomInt } from 'node:crypto';
-import { rateLimit, deliveryFailure } from '@/lib/delivery-server';
+import { rateLimit, rateLimitSource, deliveryFailure } from '@/lib/delivery-server';
 import { readJson, phoneNumber } from '@/lib/http-security';
 import { DeliveryError, sameOrigin } from '@/lib/shipment-rules';
 
@@ -13,6 +13,9 @@ export async function POST(req: Request) {
     sameOrigin(req);
     const body = await readJson(req);
     const phone = phoneNumber(body.phone);
+    await rateLimitSource(req, 'otp-send', 20, 900);
+    await rateLimit('otp-send-window:' + phone, 5, 900);
+    await rateLimit('otp-send-day:' + phone, 20, 86400);
     await rateLimit('otp-send-phone:' + phone, 1, 60);
     const apiKey = process.env.RENFLAIR_API_KEY;
     if (!apiKey) throw new DeliveryError('SMS service is temporarily unavailable', 503);

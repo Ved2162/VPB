@@ -1,4 +1,5 @@
 import 'server-only';
+import { readBody } from './http-security';
 
 // Preserve provider error structure while stripping echoed credentials/customer data.
 export function sanitizeMsg91(value: unknown, secrets: string[] = []): unknown {
@@ -18,7 +19,8 @@ export function sanitizeMsg91(value: unknown, secrets: string[] = []): unknown {
 }
 
 export async function providerBody(response: Response): Promise<unknown> {
-  const raw = await response.text();
-  if (raw.length > 65536) return { error: 'provider_response_too_large', bytes: raw.length };
+  let raw: string;
+  try { raw = await readBody(response, 65536); }
+  catch { return { error: 'provider_response_too_large' }; }
   try { return JSON.parse(raw); } catch { return { nonJsonResponse: raw }; }
 }

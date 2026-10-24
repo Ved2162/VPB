@@ -17,6 +17,8 @@ const nextConfig: NextConfig = {
     ] }];
   },
   images: {
+    // Product/site images render directly; the unused public optimizer is unnecessary.
+    unoptimized: true,
     remotePatterns: [
       { protocol: "https", hostname: "images.pexels.com" },
       { protocol: "https", hostname: "videos.pexels.com" },

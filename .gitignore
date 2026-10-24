@@ -102,6 +102,7 @@ drizzle/
 # Local security-audit scratch files (may contain private diagnostics)
 .audit-local/
 docs/*audit*.local.md
+docs/security-advanced-review-*.local.md
 audit-dependencies.json
 audit-production.json
 lint-baseline.json

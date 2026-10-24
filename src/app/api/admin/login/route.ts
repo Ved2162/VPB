@@ -3,12 +3,13 @@ import { db } from '@/db';
 import { users } from '@/db/schema';
 import { and, eq } from 'drizzle-orm';
 import { COOKIE, signToken, verifyPassword } from '@/lib/auth';
-import { deliveryFailure, jsonBody, rateLimit } from '@/lib/delivery-server';
+import { deliveryFailure, jsonBody, rateLimit, rateLimitSource } from '@/lib/delivery-server';
 import { DeliveryError, exactKeys, sameOrigin, textField } from '@/lib/shipment-rules';
 
 export async function POST(req: Request) {
   try {
     sameOrigin(req);
+    await rateLimitSource(req, 'password-auth', 100, 900);
     const body = await jsonBody(req);
     exactKeys(body, ['username', 'password']);
     const username = textField(body.username, 'admin ID', 80, true).toLowerCase();
@@ -22,7 +23,7 @@ export async function POST(req: Request) {
     if (!valid || !user?.active) throw new DeliveryError('Invalid admin ID or password', 401);
     const safe = { id: user.id, name: user.name, phone: user.phone, role: user.role };
     const response = NextResponse.json({ ok: true, user: safe });
-    response.cookies.set(COOKIE, signToken(safe), { httpOnly: true, sameSite: 'lax', path: '/', secure: process.env.NODE_ENV === 'production', maxAge: 14 * 86400 });
+    response.cookies.set(COOKIE, signToken({ ...safe, sessionVersion: user.sessionVersion }), { httpOnly: true, sameSite: 'lax', path: '/', secure: process.env.NODE_ENV === 'production', maxAge: 14 * 86400 });
     return response;
   } catch (error) { return deliveryFailure(error); }
 }

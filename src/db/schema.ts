@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric, jsonb, index } from "drizzle-orm/pg-core";
+import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric, jsonb, index, primaryKey } from "drizzle-orm/pg-core";
 import type { InvoiceSnapshot } from '@/lib/invoice-types';
 
 // Immutable image content lives in PostgreSQL, with no expiry or local-disk dependency.
@@ -54,6 +54,7 @@ export const users = pgTable("users", {
   email: varchar("email", { length: 180 }),
   phone: varchar("phone", { length: 20 }).notNull().unique(),
   passwordHash: text("password_hash").notNull(),
+  sessionVersion: integer("session_version").default(0).notNull(),
   role: varchar("role", { length: 20 }).default("customer").notNull(),
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
@@ -108,6 +109,14 @@ export const orders = pgTable("orders", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Short-lived checkout reservations do not alter stock until a captured payment.
+export const inventoryReservations = pgTable('inventory_reservations', {
+  orderId: uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  productId: uuid('product_id').notNull().references(() => products.id, { onDelete: 'cascade' }),
+  quantity: integer('quantity').notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+}, table => [primaryKey({ columns: [table.orderId, table.productId] }), index('inventory_reservations_product_idx').on(table.productId, table.expiresAt)]);
 
 export const orderItems = pgTable("order_items", {
   id: uuid("id").defaultRandom().primaryKey(),

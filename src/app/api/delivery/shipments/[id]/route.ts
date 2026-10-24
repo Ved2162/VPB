@@ -33,6 +33,7 @@ export async function PATCH(req: Request, { params }: Context) {
       // Check account and permissions again inside the save transaction.
       const [currentUser] = await tx.select().from(users).where(eq(users.id, me.id)).for('share');
       const [permission] = await tx.select().from(deliveryStaff).where(eq(deliveryStaff.userId, me.id)).for('share');
+      if (currentUser && currentUser.sessionVersion !== me.sessionVersion) throw new DeliveryError('Session expired. Please log in again', 401);
       if (!currentUser?.active || !['admin', 'delivery'].includes(currentUser.role)) throw new DeliveryError('Not permitted', 403);
       if (currentUser.role !== 'admin' && (!permission || (!permission.allOrders && existing?.assignedTo !== me.id))) throw new DeliveryError('Shipment not found', 404);
       if ('assignedTo' in body && currentUser.role !== 'admin') throw new DeliveryError('Only the main admin can assign shipments', 403);
@@ -75,6 +76,7 @@ export async function PATCH(req: Request, { params }: Context) {
       if (JSON.stringify(before) === JSON.stringify(after)) return { changed: false, version: existing?.version || 0 };
       if (body.version !== (existing?.version || 0)) throw new DeliveryError('Another staff member changed this shipment. Refresh and try again.', 409);
       validateTransition(before.status, after.status);
+      if (!['NOT_ASSIGNED', 'CANCELLED'].includes(after.status) && (order.paymentData?.stockReviewRequired || order.orderStatus === 'cancelled' || order.razorpayOrderId && order.paymentStatus !== 'paid')) throw new DeliveryError('This order is not available for fulfillment', 409);
       if (!['NOT_ASSIGNED', 'CANCELLED'].includes(after.status) && (!after.providerId || !after.docketNumber)) throw new DeliveryError('Courier and docket number are required before assigning shipment status');
       const version = (existing?.version || 0) + 1;
       const updatedAt = new Date();

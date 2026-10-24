@@ -1,3 +1,4 @@
+import { reserveStock } from '@/lib/inventory';
 import { publicProduct } from '@/lib/catalog';
 import { readJson, canonicalJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
@@ -39,7 +40,8 @@ export async function POST(req: Request) {
     const rzp = getRazorpay();
     if (!rzp) throw new DeliveryError('Payment service is temporarily unavailable', 503);
     return await db.transaction(async tx => {
-    const [account] = await tx.select({ active: users.active, role: users.role }).from(users).where(eq(users.id, me.id)).for('update');
+    const [account] = await tx.select({ active: users.active, role: users.role, sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, me.id)).for('update');
+    if (account && account.sessionVersion !== me.sessionVersion) throw new DeliveryError('Session expired. Please log in again', 401);
     if (!account?.active || account.role === 'delivery') throw new DeliveryError('Account unavailable', 403);
     const prods = await tx.select().from(products).where(and(inArray(products.id, ids), publicProduct));
     const map = new Map(prods.map((p) => [p.id, p]));
@@ -66,6 +68,9 @@ export async function POST(req: Request) {
 
     let order;
     if (reusable?.razorpayOrderId) {
+      const [current] = await tx.select({ id: orders.id }).from(orders).where(and(eq(orders.id, reusable.id), eq(orders.paymentStatus, 'pending'), eq(orders.orderStatus, 'placed'))).for('update');
+      if (!current) throw new DeliveryError('This checkout has already changed. Please refresh.', 409);
+      await reserveStock(tx, reusable.id, cartSnapshot, true);
       // Re-use the same Razorpay order (prevents duplicates on retry/refresh)
       order = { id: reusable.razorpayOrderId, amount: inPaise(total), currency: "INR", receipt: reusable.orderNumber };
     } else {
@@ -82,6 +87,7 @@ export async function POST(req: Request) {
         paymentData: {},
       }).returning();
 
+      await reserveStock(tx, ins[0].id, cartSnapshot, true);
       try {
         const rzOrder = await rzp.orders.create({
           amount: inPaise(total),

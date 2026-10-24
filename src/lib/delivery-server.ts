@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { createHash } from 'node:crypto';
 import { db } from '@/db';
 import { deliveryRateLimits, deliveryStaff, users } from '@/db/schema';
@@ -9,15 +10,17 @@ import { readJson } from './http-security';
 export async function activeUser(req: Request) {
   const token = getUserFromHeader(req);
   if (!token) throw new DeliveryError('Please log in to continue', 401);
-  const [user] = await db.select({ id: users.id, name: users.name, phone: users.phone, role: users.role, active: users.active }).from(users).where(eq(users.id, token.id));
+  const [user] = await db.select({ id: users.id, name: users.name, phone: users.phone, role: users.role, active: users.active, sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, token.id));
   if (!user?.active) throw new DeliveryError('Account disabled or unavailable', 403);
+  if (user.sessionVersion !== (token.sessionVersion ?? 0)) throw new DeliveryError('Session expired. Please log in again', 401);
   return user;
 }
 export async function deliveryUser(req: Request, adminOnly = false) {
   const token = getUserFromHeader(req);
   if (!token) throw new DeliveryError('Please log in to continue', 401);
-  const [user] = await db.select({ id: users.id, name: users.name, phone: users.phone, role: users.role, active: users.active, staffId: deliveryStaff.userId, allOrders: deliveryStaff.allOrders }).from(users).leftJoin(deliveryStaff, eq(deliveryStaff.userId, users.id)).where(eq(users.id, token.id));
+  const [user] = await db.select({ id: users.id, name: users.name, phone: users.phone, role: users.role, active: users.active, sessionVersion: users.sessionVersion, staffId: deliveryStaff.userId, allOrders: deliveryStaff.allOrders }).from(users).leftJoin(deliveryStaff, eq(deliveryStaff.userId, users.id)).where(eq(users.id, token.id));
   if (!user?.active) throw new DeliveryError('Account disabled or unavailable', 403);
+  if (user.sessionVersion !== (token.sessionVersion ?? 0)) throw new DeliveryError('Session expired. Please log in again', 401);
   if (user.role === 'admin') return { ...user, allOrders: true };
   if (adminOnly || user.role !== 'delivery') throw new DeliveryError('Not permitted', 403);
   if (!user.staffId) throw new DeliveryError('Delivery access has not been granted', 403);
@@ -33,6 +36,13 @@ export async function rateLimit(key: string, limit = 90, windowSeconds = 60) {
     },
   }).returning();
   if (row.count > limit) throw new DeliveryError('Too many requests. Please try again shortly.', 429);
+}
+// Vercel overwrites this header. On other hosts, do not trust client-supplied
+// forwarding headers: use a conservative shared bucket until a trusted proxy is configured.
+export async function rateLimitSource(req: Request, scope: string, limit: number, seconds: number) {
+  const value = process.env.VERCEL === '1' ? req.headers.get('x-vercel-forwarded-for')?.split(',')[0].trim() : undefined;
+  const address = value && isIP(value) ? value : null;
+  await rateLimit(scope + ':source:' + (address || 'unattributed'), address ? limit : limit * 10, seconds);
 }
 export async function mutation(req: Request, adminOnly = false) {
   sameOrigin(req);

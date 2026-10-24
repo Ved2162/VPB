@@ -30,8 +30,9 @@ let staff: { id: string; name: string; phone: string; active: boolean; allOrders
 let provider: typeof schema.deliveryProviders.$inferSelect;
 const password = 'Isolated-test-password-2026';
 function request(user: { id: string; name: string; phone: string; role: string } | null, path: string, body?: object, method = 'POST') {
-  return new Request('http://localhost:3100' + path, { method: body ? method : 'GET', headers: { ...(user ? { cookie: 'vpb_token=' + signToken(user) } : {}), 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
+  return new Request('http://localhost:3100' + path, { method: body ? method : 'GET', headers: { ...(user ? { cookie: user.id === staff?.id && staffCookie ? staffCookie : 'vpb_token=' + signToken(user) } : {}), 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) });
 }
+let staffCookie: string | undefined;
 const staffUser = () => ({ ...staff, role: 'delivery' });
 const context = (id = order.id) => ({ params: Promise.resolve({ id }) });
 async function patch(body: object, actor: { id: string; name: string; phone: string; role: string } = staffUser(), id = order.id) { return shipment.PATCH(request(actor, '/api/delivery/shipments/' + id, body, 'PATCH'), context(id)); }
@@ -140,6 +141,10 @@ describe('Real PostgreSQL delivery workflow', () => {
     expect((await listing.GET(request(staffUser(), '/api/delivery/shipments'))).status).toBe(403);
     expect((await patch({ version: 3, status: 'PICKED_UP' })).status).toBe(403);
     await settings.POST(request(admin, '/api/delivery/settings', { resource: 'staff', ...staff, active: true }));
+    expect((await listing.GET(request(staffUser(), '/api/delivery/shipments'))).status).toBe(401);
+    const fresh = await login.POST(request(null, '/api/delivery/login', { phone: staff.phone, password }));
+    expect(fresh.status).toBe(200);
+    staffCookie = fresh.headers.get('set-cookie')!.split(';')[0];
   });
   test('valid transit, failed delivery, retry and completion; terminal states cannot reopen', async () => {
     for (const status of ['PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY', 'DELIVERY_FAILED', 'OUT_FOR_DELIVERY', 'DELIVERED']) {

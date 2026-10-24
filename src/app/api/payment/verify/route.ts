@@ -33,14 +33,15 @@ export async function POST(req: Request) {
     const order = o[0];
 
     if (order.paymentStatus === "paid") {
-      scheduleOrderNotification(order.id);
+      if (order.razorpayPaymentId !== razorpay_payment_id) throw new DeliveryError('Payment does not match the recorded capture', 409);
+      if (!order.paymentData?.stockReviewRequired && order.orderStatus !== 'cancelled') scheduleOrderNotification(order.id);
       return NextResponse.json({ ok: true, orderId: order.id, orderNumber: order.orderNumber, already: true });
     }
 
     const payment = await fetchGatewayPayment(razorpay_payment_id);
     if (payment.order_id !== razorpay_order_id || payment.status !== 'captured') throw new DeliveryError('Payment is awaiting capture. Please retry verification shortly.', 409);
     const confirmed = await finalizePayment({ orderId: razorpay_order_id, paymentId: razorpay_payment_id, userId: me.id, amount: Number(payment.amount), currency: payment.currency, method: payment.method, signature: razorpay_signature });
-    scheduleOrderNotification(confirmed.order.id);
+    if (!confirmed.order.paymentData?.stockReviewRequired && confirmed.order.orderStatus !== 'cancelled') scheduleOrderNotification(confirmed.order.id);
     return NextResponse.json({ ok: true, orderId: order.id, orderNumber: order.orderNumber });
   } catch (e: any) {
     return deliveryFailure(e);

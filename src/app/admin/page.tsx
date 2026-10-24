@@ -248,6 +248,7 @@ export default function Admin() {
                     {selOrder.razorpayWebhookVerified && <span className="pill bg-emerald-50 text-emerald-800">Webhook verified</span>}
                   </div>
                   <div className="mt-2 space-y-1.5 text-sm">{(selOrder.items || []).map((it: any) => (<div key={it.id} className="flex justify-between"><span>{it.productName} × {it.quantity}</span><b>{money(it.price * it.quantity)}</b></div>))}</div>
+                  {selOrder.paymentData?.stockReviewRequired && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Stock review required. Update inventory, choose confirmed, then save to allocate stock and release this order.</p>}
                   <p className="label mt-4">Order Status</p>
                   <select value={selOrder.orderStatus} onChange={(e) => setSelOrder({ ...selOrder, orderStatus: e.target.value })} className="input">
                     {["placed", "confirmed", "packed", "shipped", "out_for_delivery", "delivered", "cancelled"].map((s) => (<option key={s} value={s}>{s}</option>))}

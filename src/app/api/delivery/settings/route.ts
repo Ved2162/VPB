@@ -81,7 +81,7 @@ export async function POST(req: Request) {
         const [before] = id ? await tx.select().from(users).where(eq(users.id, id)).for('update') : [];
         if (id && before?.role !== 'delivery') throw new DeliveryError('Delivery staff account not found', 404);
         const [permissions] = id ? await tx.select().from(deliveryStaff).where(eq(deliveryStaff.userId, id)) : [];
-        const data = { name, phone, active, ...(passwordHash ? { passwordHash } : {}) };
+        const data = { name, phone, active, ...(passwordHash ? { passwordHash } : {}), ...(before && (passwordHash || before.active !== active || before.phone !== phone) ? { sessionVersion: sql`${users.sessionVersion} + 1` } : {}) };
         const [after] = id ? await tx.update(users).set(data).where(eq(users.id, id)).returning() : await tx.insert(users).values({ ...data, passwordHash: passwordHash!, role: 'delivery' }).returning();
         await tx.insert(deliveryStaff).values({ userId: after.id, allOrders }).onConflictDoUpdate({ target: deliveryStaff.userId, set: { allOrders } });
         const safe = { id: after.id, name, phone, active, allOrders };

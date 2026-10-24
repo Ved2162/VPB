@@ -1,6 +1,6 @@
 # Security and production setup
 
-The application uses Next.js App Router, Node.js APIs, Drizzle and PostgreSQL. Supabase client access, AiSensy, uploads and browser database keys are not present. Private integration credentials must remain in server-side environment variables. The public Razorpay key ID is returned only for its checkout SDK; signing secrets are never returned.
+The application uses Next.js App Router, Node.js APIs, Drizzle and PostgreSQL. Supabase client access, AiSensy and browser database keys are not present. Administrator image uploads are stored in PostgreSQL and served by the public image endpoint. Private integration credentials must remain in server-side environment variables. The public Razorpay key ID is returned only for its checkout SDK; signing secrets are never returned.
 
 ## Controls
 
@@ -22,13 +22,17 @@ The local secret scanner checks tracked/untracked intended files, reachable Git 
 
 ## Database setup
 
-The tracked incremental migrations are `0001_delivery.sql` and `0002_admin_username.sql`. They extend the existing VPB database; they do not recreate its original catalog/customer/order tables. `npm run db:migrate` uses a migration ledger, checksums and an advisory transaction lock. The first migration preserves legacy courier fields. Review and back up the target database before migrations; use a separate schema-owner connection for DDL.
+The tracked incremental migrations run from `0001_delivery.sql` through `0009_inventory_reservations.sql`. They extend the existing VPB database; they do not recreate its original catalog/customer/order tables. `npm run db:migrate` uses a migration ledger, checksums and an advisory transaction lock. The first migration preserves legacy courier fields. Review and back up the target database before migrations; use a separate schema-owner connection for DDL.
 
 For a new database, provision the original baseline before these incremental migrations. Do not run current-schema `drizzle-kit push` followed by incremental CREATE migrations against those same freshly created tables. Existing deployments must confirm their migration ledger. Application credentials should have the necessary table DML and schema usage privileges, without CREATE ROLE, CREATE DATABASE, ownership or BYPASSRLS.
 
 Use the restricted application login for `DATABASE_URL`. Migration scripts and Drizzle configuration use `MIGRATION_DATABASE_URL` when supplied, with `DATABASE_URL` as a compatibility fallback. Keep the schema-owner connection only in the local migration environment; do not add `MIGRATION_DATABASE_URL` to Vercel runtime settings. The application login needs schema USAGE, normal application-table CRUD, SELECT/INSERT on the append-only delivery audit and shipment history, and SELECT only on the migration ledger. New migrations must explicitly grant access to any new tables. It must not inherit the owner role or be granted schema CREATE. SQL-created Neon roles avoid the elevated privileges assigned to console-created roles; see [Neon roles](https://neon.com/docs/manage/roles#manage-roles-with-sql).
 
-No new database migration is required by the security or animation changes. OTP and rate-limit tables are reused. Stock is not reserved during checkout: concurrent independent purchases can exceed available inventory before capture. Captured orders are retained and marked with `payment_data.stockReviewRequired` when stock is short; operations must reconcile those cases. This is not an inventory-reservation system. Partial refunds and real gateway event ordering require staging acceptance before live launch.
+The October 25 security candidate uses migrations `0008_session_revocation.sql` and `0009_inventory_reservations.sql`. They add a session epoch and an initially empty inventory-reservation table. With the user's subsequent authorization, both were applied to the existing database after an encrypted backup and full local restore/migration rehearsal. Read-only fingerprints of all 22 existing business tables matched the restored backup afterward. The restricted runtime role has reservation DML and still cannot create schema objects or rewrite issued invoices. See the local migration/staging report for evidence; application code has not been deployed.
+
+Logout revokes all sessions for that account. Password/phone changes and account disabling invalidate existing cookies through the database epoch; existing sessions start at epoch zero. Product locks and 30-minute reservations protect new checkouts, with at most three active reserved carts per account. Expired/cancelled or otherwise unallocatable captures retain the payment record on a fulfillment hold. An administrator must correct inventory and explicitly confirm the held order before invoicing/notification. Partial processed refunds are recorded idempotently by provider refund ID; full cumulative refunds remain refunded even if capture arrives later. This ledger does not issue refunds or tax credit notes.
+
+Renflair's documented OTP endpoint transmits its API key and OTP in the outbound HTTPS query string. The application does not log or return that URL, but provider/proxy URL logging remains a residual risk. Obtain a supported body/header-authenticated transport from the provider before changing that existing integration; no substitute protocol was invented.
 
 ## Vercel checklist
 
@@ -51,4 +55,6 @@ Dashboard configuration, real SMS delivery and live payment acceptance require o
 
 ## Dependency notes
 
-Next.js and eslint-config-next were aligned at 16.4.0 and PostCSS updated to 8.5.29 after advisory review. The production-only npm audit returned zero known findings. The complete audit still reports nine development-tool dependency findings in the braces/micromatch/ESLint and esbuild/Drizzle Kit chains (five high, four moderate). Do not use `npm audit fix --force` to downgrade framework or schema tools. Monitor compatible fixes and keep build/dev tooling limited to trusted code and local access. Three native-image lint warnings remain; lint has no errors.
+The October 25 local candidate pins Next.js and eslint-config-next to 16.4.3 and sharp to 0.35.5, and resolves Zod 4.6.6. The production dependency audit reports zero known findings. Four moderate development-tool findings remain in the Drizzle Kit / esbuild-kit / esbuild chain; the vulnerable esbuild dev-server is not used by the Next.js runtime. Do not use `npm audit fix --force` to downgrade framework or schema tools. Keep development tooling local and trusted. Lint has zero errors and four existing native-image warnings.
+
+See [the October 25 local audit](security-audit-2026-10-25.local.md) for findings, exact test evidence, limitations and the release gate. Subsequent authorized migration and integration verification is recorded in [the migration/staging report](security-migration-staging-audit-2026-10-25.local.md). No Git push or deployment has been performed.

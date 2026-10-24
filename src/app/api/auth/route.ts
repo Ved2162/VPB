@@ -2,9 +2,9 @@ import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { users } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import { hashPassword, verifyPassword, signToken, getUserFromHeader, COOKIE } from "@/lib/auth";
-import { activeUser, rateLimit, deliveryFailure } from '@/lib/delivery-server';
+import { activeUser, rateLimit, rateLimitSource, deliveryFailure } from '@/lib/delivery-server';
 import { sameOrigin, textField, DeliveryError } from '@/lib/shipment-rules';
 import { POST as deliveryLogin } from '@/app/api/delivery/login/route';
 
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
   const u = getUserFromHeader(req);
   if (!u) return NextResponse.json({ ok: true, user: null });
   const rows = await db.select().from(users).where(eq(users.id, u.id));
-  if (!rows.length || !rows[0].active) {
+  if (!rows.length || !rows[0].active || rows[0].sessionVersion !== (u.sessionVersion ?? 0)) {
     const response = NextResponse.json({ ok: true, user: null });
     response.cookies.set(COOKIE, '', { httpOnly: true, path: '/', maxAge: 0, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
     return response;
@@ -47,7 +47,7 @@ export async function GET(req: Request) {
       const payload = JSON.parse(Buffer.from(m[1].split(".")[1], "base64").toString());
       const sevenDays = 7 * 24 * 60 * 60;
       if (u.role !== rows[0].role || payload.exp && payload.exp - Math.floor(Date.now() / 1000) < sevenDays) {
-        const fresh = signToken({ id: rows[0].id, name: rows[0].name, phone: rows[0].phone!, role: rows[0].role });
+        const fresh = signToken({ id: rows[0].id, name: rows[0].name, phone: rows[0].phone!, role: rows[0].role, sessionVersion: rows[0].sessionVersion });
         setCookie(res, fresh);
       }
     } catch { /* ignore malformed token — verifyToken already validated */ }
@@ -67,18 +67,18 @@ export async function POST(req: Request) {
     }
 
     if (action === "login") {
+      await rateLimitSource(req, 'password-auth', 100, 900);
       const password = textField(body.password, "password", 72, true);
       const phone = normalisePhone(textField(body.phone, "phone", 20, true));
       await rateLimit("customer-auth:" + phone, 10, 900);
       if (!phone || !password) return NextResponse.json({ ok: false, error: "Phone number and password are required" }, { status: 400 });
       const rows = await db.select().from(users).where(eq(users.phone, phone));
-      if (!rows.length) return NextResponse.json({ ok: false, error: "Invalid phone number or password" }, { status: 401 });
-      if (rows[0].role === 'admin') throw new DeliveryError('Use the main admin sign-in page', 403);
-      if (rows[0].role === 'delivery') return deliveryLogin(new Request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify({ phone, password }) }));
-      if (!rows[0].active) return NextResponse.json({ ok: false, error: "Account disabled. Contact support." }, { status: 403 });
-      const ok = await verifyPassword(password, rows[0].passwordHash);
-      if (!ok) return NextResponse.json({ ok: false, error: "Invalid phone number or password" }, { status: 401 });
-      const token = signToken({ id: rows[0].id, name: rows[0].name, phone: rows[0].phone!, role: rows[0].role });
+      const user = rows[0];
+      const ok = await verifyPassword(password, user?.passwordHash || '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy');
+      if (!ok || !user?.active) return NextResponse.json({ ok: false, error: "Invalid phone number or password" }, { status: 401 });
+      if (user.role === 'admin') throw new DeliveryError('Use the main admin sign-in page', 403);
+      if (user.role === 'delivery') return deliveryLogin(new Request(req.url, { method: 'POST', headers: req.headers, body: JSON.stringify({ phone, password }) }));
+      const token = signToken({ id: rows[0].id, name: rows[0].name, phone: rows[0].phone!, role: rows[0].role, sessionVersion: rows[0].sessionVersion });
       const res = NextResponse.json({ ok: true, user: { id: rows[0].id, name: rows[0].name, phone: rows[0].phone, role: rows[0].role } });
       setCookie(res, token);
       return res;
@@ -105,8 +105,13 @@ export async function POST(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  try { sameOrigin(req); } catch (error) { return deliveryFailure(error); }
-  const res = NextResponse.json({ ok: true });
-  res.cookies.set(COOKIE, "", { path: "/", maxAge: 0 });
-  return res;
+  try {
+    sameOrigin(req);
+    const token = getUserFromHeader(req);
+    if (token) await db.update(users).set({ sessionVersion: sql`${users.sessionVersion} + 1` })
+      .where(and(eq(users.id, token.id), eq(users.sessionVersion, token.sessionVersion ?? 0)));
+    const res = NextResponse.json({ ok: true });
+    res.cookies.set(COOKIE, "", { httpOnly: true, path: "/", maxAge: 0, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
+    return res;
+  } catch (error) { return deliveryFailure(error); }
 }

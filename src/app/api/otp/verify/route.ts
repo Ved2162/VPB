@@ -5,7 +5,7 @@ import { eq, and, gte, desc } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
 import { randomBytes } from 'node:crypto';
 import { signToken, COOKIE } from '@/lib/auth';
-import { rateLimit, deliveryFailure } from '@/lib/delivery-server';
+import { rateLimit, rateLimitSource, deliveryFailure } from '@/lib/delivery-server';
 import { readJson, phoneNumber } from '@/lib/http-security';
 import { sameOrigin, textField, DeliveryError } from '@/lib/shipment-rules';
 
@@ -17,6 +17,7 @@ export async function POST(req: Request) {
     const otp = textField(body.otp, 'OTP', 6, true);
     const name = textField(body.name ?? '', 'name', 120);
     if (!/^\d{6}$/.test(otp)) throw new DeliveryError('OTP must be 6 digits');
+    await rateLimitSource(req, 'otp-verify', 60, 900);
     await rateLimit('otp-verify-phone:' + phone, 20, 900);
     // Serialize attempts and consumption: a code cannot be replayed or exceed five guesses.
     const result = await db.transaction(async tx => {
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
       if (!existing && !name) return { error: 'Name is required for new accounts', status: 400, needName: true };
       const user = existing || (await tx.insert(users).values({ name, phone, email: null, passwordHash: '$otp$' + randomBytes(32).toString('hex'), role: 'customer', active: true }).returning())[0];
       await tx.update(otpRequests).set({ consumed: true }).where(eq(otpRequests.id, record.id));
-      return { user: { id: user.id, name: user.name, phone: user.phone!, role: user.role }, isNew: !existing };
+      return { user: { id: user.id, name: user.name, phone: user.phone!, role: user.role, sessionVersion: user.sessionVersion }, isNew: !existing };
     });
     if ('error' in result) return NextResponse.json({ ok: false, error: result.error, needName: result.needName }, { status: result.status });
     const res = NextResponse.json({ ok: true, user: result.user, isNew: result.isNew });

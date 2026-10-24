@@ -15,7 +15,7 @@ if (!/^[a-z0-9_]{3,80}$/.test(username) || typeof password !== 'string' || passw
 const hash = await bcrypt.hash(password, 10);
 const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL, connectionTimeoutMillis: 10000 });
 try {
-  const result = await pool.query("UPDATE users SET username=$1, password_hash=$2 WHERE phone=$3 AND role='admin' AND active=true RETURNING id", [username, hash, phone]);
+  const result = await pool.query("UPDATE users SET username=$1, password_hash=$2, session_version=session_version+1 WHERE phone=$3 AND role='admin' AND active=true RETURNING id", [username, hash, phone]);
   if (result.rowCount !== 1) throw new Error('Exactly one active main-admin account must match');
   console.log('Main-admin username and password updated successfully.');
 } catch (error) { console.error('Admin configuration failed:', error.code || 'Unable to update account'); process.exitCode = 1; }

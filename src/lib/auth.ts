@@ -14,7 +14,7 @@ function getJwtSecret(): string {
 
 const COOKIE_NAME = "vpb_token";
 
-export type SessionUser = { id: string; name: string; phone: string; role: string };
+export type SessionUser = { id: string; name: string; phone: string; role: string; sessionVersion?: number };
 
 export async function hashPassword(pw: string) {
   return bcrypt.hash(pw, 10);
@@ -23,12 +23,13 @@ export async function verifyPassword(pw: string, hash: string) {
   return bcrypt.compare(pw, hash);
 }
 export function signToken(user: SessionUser) {
-  return jwt.sign(user, getJwtSecret(), { expiresIn: "14d" });
+  return jwt.sign({ id: user.id, name: user.name, phone: user.phone, role: user.role, sessionVersion: user.sessionVersion ?? 0 }, getJwtSecret(), { expiresIn: "14d" });
 }
 export function verifyToken(token: string): SessionUser | null {
   try {
     const user = jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
     if (typeof user === 'string' || typeof user.id !== 'string' || !/^[0-9a-f-]{36}$/i.test(user.id) || !['admin', 'delivery', 'customer'].includes(user.role) || typeof user.name !== 'string' || typeof user.phone !== 'string') return null;
+    if (user.sessionVersion !== undefined && (!Number.isSafeInteger(user.sessionVersion) || user.sessionVersion < 0)) return null;
     return user as SessionUser;
   } catch {
     return null;

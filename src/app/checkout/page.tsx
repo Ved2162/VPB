@@ -101,7 +101,7 @@ export default function CheckoutPage() {
       if (!confirmation.ok) throw new Error(confirmation.error || 'Payment confirmation is pending. Retry verification.');
       const result = await (await apiFetch('/api/orders/' + confirmation.orderId)).json();
       if (!result.ok || !result.order) throw new Error('Payment received. Order details are temporarily unavailable. Retry verification or check My Orders.');
-      setOrder(result.order); setPendingReceipt(null); setStep(4); clear(); toast('Payment successful - order confirmed!');
+      setOrder(result.order); setPendingReceipt(null); setStep(4); clear(); toast(result.order.fulfillmentPending ? 'Payment received - your order is awaiting review.' : 'Payment successful - order confirmed!');
     } catch (error) { setErr(error instanceof Error ? error.message : 'Unable to confirm payment'); setStep(3); }
     finally { setPlacing(false); }
   };
@@ -177,14 +177,14 @@ export default function CheckoutPage() {
       {step === 4 && order ? (
         <div className="card mx-auto mt-8 max-w-xl p-8 text-center">
           <span className="mx-auto grid h-16 w-16 place-items-center rounded-full bg-green-100 text-green-700"><Check size={30} /></span>
-          <h2 className="mt-4 font-serif text-2xl font-bold">Order Confirmed!</h2>
-          <p className="mt-1 text-stone-500">Thank you for shopping with VPB.</p>
+          <h2 className="mt-4 font-serif text-2xl font-bold">{order.fulfillmentPending ? 'Payment Received' : 'Order Confirmed!'}</h2>
+          <p className="mt-1 text-stone-500">{order.fulfillmentPending ? 'Your payment is recorded. VPB will review your order before confirming fulfillment. Contact support if you need help.' : 'Thank you for shopping with VPB.'}</p>
           <div className="mt-4 rounded-2xl bg-[#fff6e3] p-4 text-sm">
             <p>Order <b>{order.orderNumber}</b></p><p>Total paid <b className="text-[#7a1f1f]">{money(order.total)}</b> via {order.paymentMethod?.toUpperCase()}</p>
             <p>Tracking details will be available after dispatch.</p>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-2"><Link href={`/track-order?num=${order.orderNumber}`} className="btn-ghost">Track Order</Link><Link href="/account" className="btn-primary">My Orders</Link></div>
-          <InvoiceActions orderId={order.id} />
+          {!order.fulfillmentPending && <InvoiceActions orderId={order.id} />}
         </div>
       ) : (
         <div className="mt-8 grid gap-8 lg:grid-cols-[1fr_360px]">

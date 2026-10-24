@@ -45,8 +45,9 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(
 afterAll(async () => { await database?.pg.close(); });
 async function pending(phone: string | null = customer.phone) {
   const n = ++counter;
+  const [product] = await database.db.insert(schema.products).values({ name: 'Notification fixture manjha', slug: 'wa-fixture-' + n, sku: 'WA-FIXTURE-' + n, price: 123, stockQuantity: 1 }).returning();
   return (await database.db.insert(schema.orders).values({ userId: customer.id, orderNumber: 'WA-TEST-' + n, subtotal: 123, total: 123,
-    customerName: customer.name, customerPhone: phone, razorpayOrderId: 'order_wa' + n, cartSnapshot: [] }).returning())[0];
+    customerName: customer.name, customerPhone: phone, razorpayOrderId: 'order_wa' + n, cartSnapshot: [{ id: product.id, qty: 1, price: 123, name: product.name } as never] }).returning())[0];
 }
 async function confirm(order: Awaited<ReturnType<typeof pending>>) {
   return finalizePayment({ orderId: order.razorpayOrderId!, paymentId: 'pay_test' + counter, amount: 12300, currency: 'INR', userId: customer.id });

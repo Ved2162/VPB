@@ -72,9 +72,13 @@ export async function POST(req: Request) {
       if (!['en', 'hi-Latn', 'gu-Latn'].includes(language)) throw new DeliveryError('Invalid review language');
       const [product] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), publicProduct));
       if (!product) throw new DeliveryError('Product unavailable', 404);
-      const [previous] = await db.select({ id: reviews.id }).from(reviews).where(and(eq(reviews.userId, me.id), eq(reviews.productId, productId)));
+      await db.transaction(async tx => {
+        const [current] = await tx.select().from(users).where(eq(users.id, me.id)).for('update');
+        if (!current?.active || current.sessionVersion !== me.sessionVersion || current.role === 'delivery') throw new DeliveryError('Customer session expired', 401);
+      const [previous] = await tx.select({ id: reviews.id }).from(reviews).where(and(eq(reviews.userId, me.id), eq(reviews.productId, productId)));
       if (previous) throw new DeliveryError('You have already submitted a review for this product', 409);
-      await db.insert(reviews).values({ userId: me.id, productId, rating: Number(rating), title: title || null, review, language, status: 'pending', isDemo: false });
+      await tx.insert(reviews).values({ userId: me.id, productId, rating: Number(rating), title: title || null, review, language, status: 'pending', isDemo: false });
+      });
       return NextResponse.json({ ok: true });
     }
     if (body.res === "pincode") {

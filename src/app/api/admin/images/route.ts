@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import sharp from 'sharp';
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
 import { productImages } from '@/db/schema';
@@ -16,6 +17,12 @@ export async function POST(req: Request) {
     const bytes = await readBytes(req, MAX_IMAGE_BYTES);
     const contentType = imageContentType(bytes);
     if (!contentType) throw new DeliveryError('Choose a JPEG, PNG, WebP or GIF image', 400);
+    try {
+      const decoder = sharp(bytes, { limitInputPixels: 25_000_000, animated: true });
+      const metadata = await decoder.metadata();
+      if (!metadata.width || !metadata.height || (metadata.pages || 1) > 100 || metadata.width * metadata.height * (metadata.pages || 1) > 25_000_000) throw new Error('Image dimensions exceed limit');
+      await decoder.stats();
+    } catch { throw new DeliveryError('Choose a valid image up to 25 megapixels and 100 animation frames', 400); }
     const id = createHash('sha256').update(bytes).digest('hex');
     await db.insert(productImages).values({ id, contentType, data: Buffer.from(bytes).toString('base64') }).onConflictDoNothing();
     return NextResponse.json({ ok: true, url: '/api/images/' + id });

@@ -8,7 +8,7 @@ import { activeUser, deliveryFailure } from '@/lib/delivery-server';
 
 function publicOrder(order: typeof orders.$inferSelect) {
   const { razorpaySignature: _signature, paymentData: _paymentData, cartSnapshot: _cart, ...safe } = order;
-  return safe;
+  return { ...safe, fulfillmentPending: order.paymentData?.stockReviewRequired === true || order.orderStatus === 'cancelled' };
 }
 export async function GET(req: Request) {
   try {
