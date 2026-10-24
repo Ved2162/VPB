@@ -71,7 +71,7 @@ export function Navbar() {
           </nav>
           <div className="flex items-center gap-1.5 sm:gap-3">
             <form onSubmit={(e) => { e.preventDefault(); router.push("/shop?q=" + encodeURIComponent(q)); }} className="hidden items-center overflow-hidden rounded-full border border-[#e7d6b8] bg-white md:flex">
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search manjha, kites…" className="w-44 bg-transparent px-4 py-2 text-sm outline-none placeholder:text-stone-400 lg:w-52" />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search manjha..." className="w-44 bg-transparent px-4 py-2 text-sm outline-none placeholder:text-stone-400 lg:w-52" />
               <button className="grid h-9 w-9 place-items-center bg-[#7a1f1f] text-[#f7ead7]"><Search size={16} /></button>
             </form>
             <Link href={me ? "/account" : "/login"} className="grid h-10 w-10 place-items-center rounded-full border border-[#e7d6b8] bg-white text-[#3a2118] transition hover:border-[#7a1f1f] hover:text-[#7a1f1f]" aria-label="Account"><User size={18} /></Link>
@@ -177,7 +177,7 @@ export function ProductCard({ p }: { p: any }) {
       <div className="p-3.5 sm:p-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#a07c2c]">{p.brand || "VPB"} {p.cordCount ? `• ${p.cordCount} Cord` : ""}</p>
         <Link href={`/product/${p.slug}`} className="mt-0.5 line-clamp-1 font-serif text-[16px] font-bold text-[#2b140d] hover:text-[#7a1f1f]">{p.name}</Link>
-        <div className="mt-1 flex items-center gap-1.5"><Stars v={p.rating} /><span className="text-xs text-stone-500">({p.reviewCount || 0})</span></div>
+        <div className="mt-1 flex items-center gap-1.5">{p.reviewCount > 0 ? <Stars v={p.rating} /> : <span className="text-xs text-stone-500">No reviews yet</span>}<span className="text-xs text-stone-500">({p.reviewCount || 0})</span></div>
         <div className="mt-1.5 flex items-baseline gap-2"><span className="text-[17px] font-extrabold text-[#2b140d]">{money(p.price)}</span>{p.comparePrice > p.price && <span className="text-sm text-stone-400 line-through">{money(p.comparePrice)}</span>}</div>
         <button disabled={out} onClick={() => { add({ id: p.id, slug: p.slug, name: p.name, price: p.price, comparePrice: p.comparePrice, image: img, stock: p.stockQuantity }, 1); toast(`${p.name} added to cart`); }} className="btn-primary mt-3 w-full !py-2.5 text-[13px] disabled:opacity-40">{out ? "Out of Stock" : "Add to Cart"}</button>
       </div>
@@ -207,7 +207,7 @@ export function Footer() {
         <div>
           <h4 className="font-serif text-lg font-bold text-[#f7ead7]">Shop</h4>
           <ul className="mt-3 space-y-2 text-sm">
-            {[["All Products", "/shop"], ["6 Cord", "/shop?cord=6"], ["9 Cord", "/shop?cord=9"], ["12 Cord", "/shop?cord=12"], ["Premium Manjha", "/shop?cat=premium-manjha"], ["Kites", "/shop?cat=kites"]].map(([l, h]) => (<li key={l}><Link href={h} className="hover:text-white">{l}</Link></li>))}
+            {[["All Products", "/shop"], ["6 Cord", "/shop?cord=6"], ["9 Cord", "/shop?cord=9"], ["12 Cord", "/shop?cord=12"], ["Premium Manjha", "/shop?cat=premium-manjha"]].map(([l, h]) => (<li key={l}><Link href={h} className="hover:text-white">{l}</Link></li>))}
           </ul>
         </div>
         <div>

@@ -9,8 +9,8 @@ test('admin selects and drops images, then saves and reopens a product', async (
   await page.getByRole('button', { name: 'Products', exact: true }).click();
   await page.getByRole('button', { name: 'Add Product' }).click();
   const modal = page.locator('.fixed:visible').filter({ has: page.getByRole('button', { name: 'Save Product' }) });
-  await modal.locator('input').nth(0).fill('Uploaded image kite');
-  await modal.locator('input').nth(3).fill('E2E-IMAGE-KITE');
+  await modal.locator('input').nth(0).fill('Uploaded image manjha');
+  await modal.locator('input').nth(3).fill('E2E-IMAGE-MANJHA');
   await page.getByLabel('Choose product images').setInputFiles('public/images/manjha/m01.png');
   await expect(page.getByAltText('Product image 1', { exact: true })).toBeVisible();
   const bytes = await readFile('public/images/manjha/m02.png');
@@ -26,7 +26,7 @@ test('admin selects and drops images, then saves and reopens a product', async (
   await expect(modal).toHaveCount(0);
   await page.reload();
   await page.getByRole('button', { name: 'Products', exact: true }).click();
-  const row = page.getByRole('row').filter({ hasText: 'Uploaded image kite' });
+  const row = page.getByRole('row').filter({ hasText: 'Uploaded image manjha' });
   await expect(row).toBeVisible();
   await row.getByRole('button').first().click();
   await expect(page.getByAltText('Product image 2', { exact: true })).toBeVisible();
@@ -36,6 +36,6 @@ test('admin selects and drops images, then saves and reopens a product', async (
     expect(image.status()).toBe(200);
     expect(image.headers()['content-type']).toBe('image/png');
   }
-  const storefront = await page.request.get('/api/products?q=Uploaded%20image%20kite');
+  const storefront = await page.request.get('/api/products?q=Uploaded%20image%20manjha');
   expect((await storefront.json()).products[0].images).toEqual(imageUrls);
 });

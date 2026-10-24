@@ -7,8 +7,9 @@ import RazorpayLoader from "@/lib/razorpay-client";
 import { RequestActivity } from '@/components/loading';
 
 export const metadata: Metadata = {
-  title: "VPB — Verai Patang Bhandar | Premium Bareilly Manjha & Kites",
-  description: "VPB Verai Patang Bhandar — 100% pure cotton Bareilly manjha, premium kites. Hand-crafted, quality tested, shipped across India.",
+  icons: { icon: [{ url: '/favicon.ico', sizes: 'any' }, { url: '/favicon-32x32.png', sizes: '32x32', type: 'image/png' }, { url: '/favicon-16x16.png', sizes: '16x16', type: 'image/png' }], apple: [{ url: '/apple-touch-icon.png', sizes: '180x180' }] },
+  title: "VPB — Verai Patang Bhandar | Premium Bareilly Manjha",
+  description: "VPB Verai Patang Bhandar — 100% pure cotton Bareilly manjha. Hand-crafted, quality tested, shipped across India.",
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

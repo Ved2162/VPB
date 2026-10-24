@@ -31,9 +31,6 @@ const IMG = {
   tools:   ["/images/manjha/m07.png", "/images/manjha/m05.png"],
   // Light blue reel → 6-cord Gold Classic, Heritage
   blue:    ["/images/manjha/m08.png", "/images/manjha/m01.png"],
-  // Kite images — keep pexels (no local kite photos provided)
-  kite1: ["https://images.pexels.com/photos/30333344/pexels-photo-30333344.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "https://images.pexels.com/photos/5005214/pexels-photo-5005214.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"],
-  kite2: ["https://images.pexels.com/photos/30470265/pexels-photo-30470265.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", "https://images.pexels.com/photos/35098545/pexels-photo-35098545.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940"],
 };
 
 export async function POST(req: Request) {
@@ -55,11 +52,10 @@ export async function POST(req: Request) {
     const catDefs = [
       { name: "6 Cord", slug: "6-cord", description: "Everyday 6 cord Bareilly manjha — perfect balance of sharpness and control for daily flying.", image: IMG.blue[0] },
       { name: "9 Cord", slug: "9-cord", description: "Tournament-favourite 9 cord — extra bite for serious pench.", image: IMG.orange[0] },
-      { name: "12 Cord", slug: "12-cord", description: "Heavy 12 cord for big kites and high winds.", image: IMG.dark[0] },
+      { name: "12 Cord", slug: "12-cord", description: "Heavy 12 cord for high tension and strong winds.", image: IMG.dark[0] },
       { name: "Premium Manjha", slug: "premium-manjha", description: "VPB signature premium reels — hand-finished, authentic Bareilly paste-coated, quality tested.", image: IMG.rainbow[0] },
       { name: "Special Manjha", slug: "special-manjha", description: "Limited special editions — Black Panther, Adnan Special and more.", image: IMG.darkCyl[0] },
-      { name: "Kites", slug: "kites", description: "Hand-made designer patangs — Adnan, Bareilly and Delhi styles.", image: IMG.kite1[0] },
-      { name: "Accessories", slug: "accessories", description: "Charkhi, saddi, thread wax and kite accessories.", image: IMG.tools[0] },
+      { name: "Accessories", slug: "accessories", description: "Charkhi, saddi, thread wax and reel accessories.", image: IMG.tools[0] },
     ];
     const catIds: Record<string, string> = {};
     for (const c of catDefs) {
@@ -70,18 +66,16 @@ export async function POST(req: Request) {
     }
 
     const prodDefs = [
-      { name: "Adnan 9 Cord Special", cat: "9-cord", brand: "VPB • Adnan", cord: 9, price: 2499, compare: 2999, best: true, feat: true, rating: "4.9", rc: 212, sku: "VPB-ADN-9C", stock: 42, images: IMG.orange, reel: "3 Reel • 6000m", desc: "VPB's flagship Adnan 9 cord — pure cotton base, even Bareilly manjha paste coating, razor pench. The reel serious flyers ask for by name. Made in Bareilly, finished by VPB karigars." },
-      { name: "Black Panther 9 Cord", cat: "special-manjha", brand: "VPB • Black Panther", cord: 9, price: 2799, compare: 3299, best: true, feat: true, rating: "4.8", rc: 164, sku: "VPB-BLK-9C", stock: 35, images: IMG.darkCyl, reel: "3 Reel • 6000m", desc: "Black Panther — dark-coated aggressive 9 cord with brutal cutting power. For experienced hands only. VPB quality-tested every 500m." },
-      { name: "VPB Gold Classic 6 Cord", cat: "6-cord", brand: "VPB", cord: 6, price: 1299, compare: 1599, best: true, feat: true, rating: "4.7", rc: 328, sku: "VPB-GLD-6C", stock: 80, images: IMG.blue, reel: "3 Reel • 6000m", desc: "The everyday legend. Smooth, sharp, easy on hands — ideal for daily terrace flying and beginners moving to real Bareilly manjha." },
-      { name: "Shahi 12 Cord Heavy", cat: "12-cord", brand: "VPB • Shahi", cord: 12, price: 3499, compare: 3999, best: false, feat: true, rating: "4.8", rc: 96, sku: "VPB-SHH-12C", stock: 28, images: IMG.dark, reel: "3 Reel • 6000m", desc: "Heavy 12 cord for big patangs and strong winds. Thick cotton, deep manjha penetration, unshakeable grip in pench." },
-      { name: "Ustad 6 Cord Tournament", cat: "6-cord", brand: "VPB • Ustad", cord: 6, price: 1899, compare: 2199, best: true, feat: false, rating: "4.6", rc: 141, sku: "VPB-UST-6C", stock: 55, images: IMG.tools, reel: "2 Reel • 4000m", desc: "Tournament-tuned 6 cord with fine authentic Bareilly paste finish. Fast, precise, consistent — trusted in club competitions across UP and Gujarat." },
-      { name: "Nawab Premium 9 Cord", cat: "premium-manjha", brand: "VPB • Nawab", cord: 9, price: 3199, compare: 3699, best: false, feat: true, rating: "4.9", rc: 78, sku: "VPB-NWB-9C", stock: 22, images: IMG.rainbow, reel: "3 Reel • 6000m", desc: "Nawab series — VPB's most refined 9 cord. Hand-rubbed, triple-coated with authentic Bareilly manjha paste, silk-smooth release with elite cutting edge." },
-      { name: "Tez Talwar 12 Cord", cat: "12-cord", brand: "VPB", cord: 12, price: 2999, compare: 3499, best: false, feat: false, rating: "4.5", rc: 64, sku: "VPB-TEZ-12C", stock: 31, images: [IMG.dark[1], IMG.darkCyl[0]], reel: "3 Reel • 6000m", desc: "Tez Talwar heavy manjha for kite battles. High-tension cotton core holds shape even in gusty Uttarayan winds." },
-      { name: "Chand Sitara Designer Patang (10 pc)", cat: "kites", brand: "VPB Kites", cord: 0, price: 499, compare: 699, best: true, feat: false, rating: "4.6", rc: 402, sku: "VPB-KT-CND10", stock: 150, images: IMG.kite1, reel: "10 Patangs", desc: "Hand-made designer patangs with bamboo frame and premium paper. Balanced for stable flight, ready to tie and fly." },
-      { name: "Adnan Patang Premium (20 pc)", cat: "kites", brand: "VPB • Adnan", cord: 0, price: 899, compare: 1199, best: true, feat: true, rating: "4.7", rc: 256, sku: "VPB-KT-ADN20", stock: 120, images: IMG.kite2, reel: "20 Patangs", desc: "Genuine Adnan-style patangs — thin, fast, deadly in pench. Competition cut, kite-maker finished." },
-      { name: "Saddi + Charkhi Combo", cat: "accessories", brand: "VPB", cord: 0, price: 349, compare: 499, best: false, feat: false, rating: "4.5", rc: 118, sku: "VPB-ACC-CHK", stock: 200, images: [IMG.tools[1], IMG.tools[0]], reel: "1 Charkhi + Saddi", desc: "Strong wooden charkhi with 1000m saddi. Smooth spin, comfortable grip — everything except the manjha." },
-      { name: "VPB Heritage 16 Cord (Limited)", cat: "premium-manjha", brand: "VPB Heritage", cord: 16, price: 4999, compare: 5999, best: false, feat: true, rating: "5.0", rc: 41, sku: "VPB-HER-16C", stock: 12, images: [IMG.darkCyl[1], IMG.dark[0]], reel: "3 Reel • 6000m", desc: "Limited Heritage 16 cord — the heaviest VPB makes. For giant kites and exhibition flying. Numbered reels." },
-      { name: "Gulab Special 6 Cord", cat: "special-manjha", brand: "VPB • Gulab", cord: 6, price: 1599, compare: 1899, best: false, feat: false, rating: "4.6", rc: 89, sku: "VPB-GLB-6C", stock: 47, images: [IMG.rainbow[1], IMG.rainbow[0]], reel: "2 Reel • 4000m", desc: "Gulab special — smooth pink-coated 6 cord, gentle on hands, sharp in pench. A VPB house favourite." },
+      { name: "Adnan 9 Cord Special", cat: "9-cord", brand: "VPB • Adnan", cord: 9, price: 2499, compare: 2999, best: true, feat: true, sku: "VPB-ADN-9C", stock: 42, images: IMG.orange, reel: "3 Reel • 6000m", desc: "VPB's flagship Adnan 9 cord — pure cotton base, even Bareilly manjha paste coating, razor pench. The reel serious flyers ask for by name. Made in Bareilly, finished by VPB karigars." },
+      { name: "Black Panther 9 Cord", cat: "special-manjha", brand: "VPB • Black Panther", cord: 9, price: 2799, compare: 3299, best: true, feat: true, sku: "VPB-BLK-9C", stock: 35, images: IMG.darkCyl, reel: "3 Reel • 6000m", desc: "Black Panther — dark-coated aggressive 9 cord with brutal cutting power. For experienced hands only. VPB quality-tested every 500m." },
+      { name: "VPB Gold Classic 6 Cord", cat: "6-cord", brand: "VPB", cord: 6, price: 1299, compare: 1599, best: true, feat: true, sku: "VPB-GLD-6C", stock: 80, images: IMG.blue, reel: "3 Reel • 6000m", desc: "The everyday legend. Smooth, sharp, easy on hands — ideal for daily terrace flying and beginners moving to real Bareilly manjha." },
+      { name: "Shahi 12 Cord Heavy", cat: "12-cord", brand: "VPB • Shahi", cord: 12, price: 3499, compare: 3999, best: false, feat: true, sku: "VPB-SHH-12C", stock: 28, images: IMG.dark, reel: "3 Reel • 6000m", desc: "Heavy 12 cord for high tension and strong winds. Thick cotton, deep manjha penetration, unshakeable grip in pench." },
+      { name: "Ustad 6 Cord Tournament", cat: "6-cord", brand: "VPB • Ustad", cord: 6, price: 1899, compare: 2199, best: true, feat: false, sku: "VPB-UST-6C", stock: 55, images: IMG.tools, reel: "2 Reel • 4000m", desc: "Tournament-tuned 6 cord with fine authentic Bareilly paste finish. Fast, precise, consistent — trusted in club competitions across UP and Gujarat." },
+      { name: "Nawab Premium 9 Cord", cat: "premium-manjha", brand: "VPB • Nawab", cord: 9, price: 3199, compare: 3699, best: false, feat: true, sku: "VPB-NWB-9C", stock: 22, images: IMG.rainbow, reel: "3 Reel • 6000m", desc: "Nawab series — VPB's most refined 9 cord. Hand-rubbed, triple-coated with authentic Bareilly manjha paste, silk-smooth release with elite cutting edge." },
+      { name: "Tez Talwar 12 Cord", cat: "12-cord", brand: "VPB", cord: 12, price: 2999, compare: 3499, best: false, feat: false, sku: "VPB-TEZ-12C", stock: 31, images: [IMG.dark[1], IMG.darkCyl[0]], reel: "3 Reel • 6000m", desc: "Tez Talwar heavy manjha for tournament pench. High-tension cotton core holds shape even in gusty Uttarayan winds." },
+      { name: "Saddi + Charkhi Combo", cat: "accessories", brand: "VPB", cord: 0, price: 349, compare: 499, best: false, feat: false, sku: "VPB-ACC-CHK", stock: 200, images: [IMG.tools[1], IMG.tools[0]], reel: "1 Charkhi + Saddi", desc: "Strong wooden charkhi with 1000m saddi. Smooth spin, comfortable grip — everything except the manjha." },
+      { name: "VPB Heritage 16 Cord (Limited)", cat: "premium-manjha", brand: "VPB Heritage", cord: 16, price: 4999, compare: 5999, best: false, feat: true, sku: "VPB-HER-16C", stock: 12, images: [IMG.darkCyl[1], IMG.dark[0]], reel: "3 Reel • 6000m", desc: "Limited Heritage 16 cord — the heaviest VPB makes. For exhibition flying and heavier tension. Numbered reels." },
+      { name: "Gulab Special 6 Cord", cat: "special-manjha", brand: "VPB • Gulab", cord: 6, price: 1599, compare: 1899, best: false, feat: false, sku: "VPB-GLB-6C", stock: 47, images: [IMG.rainbow[1], IMG.rainbow[0]], reel: "2 Reel • 4000m", desc: "Gulab special — smooth pink-coated 6 cord, gentle on hands, sharp in pench. A VPB house favourite." },
     ];
 
     for (const p of prodDefs) {
@@ -95,7 +89,7 @@ export async function POST(req: Request) {
         name: p.name, slug, description: p.desc, categoryId: catIds[p.cat], brand: p.brand,
         cordCount: p.cord, reelCount: p.reel, length: p.reel, price: p.price, comparePrice: p.compare,
         stockQuantity: p.stock, stockStatus: "in_stock", sku: p.sku, featured: p.feat, bestseller: p.best,
-        active: true, images: p.images, rating: p.rating, reviewCount: p.rc, highlights, specs,
+        active: true, images: p.images, rating: "0", reviewCount: 0, highlights, specs,
       });
     }
 

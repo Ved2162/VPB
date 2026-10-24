@@ -1,3 +1,4 @@
+import { publicProduct } from '@/lib/catalog';
 import { readJson, canonicalJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
@@ -40,7 +41,7 @@ export async function POST(req: Request) {
     return await db.transaction(async tx => {
     const [account] = await tx.select({ active: users.active, role: users.role }).from(users).where(eq(users.id, me.id)).for('update');
     if (!account?.active || account.role === 'delivery') throw new DeliveryError('Account unavailable', 403);
-    const prods = await tx.select().from(products).where(inArray(products.id, ids));
+    const prods = await tx.select().from(products).where(and(inArray(products.id, ids), publicProduct));
     const map = new Map(prods.map((p) => [p.id, p]));
 
     let subtotal = 0;

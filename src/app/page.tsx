@@ -1,17 +1,19 @@
+import { publicProduct, publicCategory, reviewRating, reviewCount } from '@/lib/catalog';
+import { SampleReviews } from '@/components/sample-reviews';
 import { BrandedLink as Link } from "@/components/loading";
 import { ArrowRight, AtSign, ShieldCheck, Star, Truck, BadgeCheck, Quote } from "lucide-react";
 import { ProductCard, SectionHead, TrustBar, Stars, CtaBand, SafeImg } from "@/components/site";
-import { HERO_VIDEO, HERO_POSTER, GALLERY, CRAFT_IMAGES, INSTAGRAM_URL } from "@/lib/data";
+import { HERO_VIDEO, HERO_POSTER, GALLERY, CRAFT_IMAGES, HOMEPAGE_CRAFT_IMAGES, INSTAGRAM_URL } from "@/lib/data";
 import { db } from "@/db";
 import { products, categories } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { getTableColumns } from "drizzle-orm";
 
 export const dynamic = "force-dynamic";
 
 async function getData() {
   try {
-    const feat = await db.select().from(products).where(eq(products.active, true));
-    const cats = await db.select().from(categories);
+    const feat = await db.select({ ...getTableColumns(products), rating: reviewRating, reviewCount }).from(products).where(publicProduct);
+    const cats = await db.select().from(categories).where(publicCategory);
     return { products: feat, categories: cats.filter((c) => c.active) };
   } catch {
     return { products: [], categories: [] };
@@ -50,7 +52,7 @@ export default async function Home() {
               <Link href="/craftsmanship" className="inline-flex items-center gap-2 rounded-full border border-white/30 px-8 py-3.5 text-[15px] font-bold text-white backdrop-blur transition hover:bg-white/15">Explore VPB</Link>
             </div>
             <div className="hero-fade hero-fade-3 mt-8 flex flex-wrap items-center gap-x-7 gap-y-2 text-[13px] font-semibold text-[#e9d5ae]">
-              <span className="flex items-center gap-1.5"><Star size={14} className="fill-[#c9a24b] text-[#c9a24b]" /> 4.8 — 2,400+ reviews</span>
+              <span className="flex items-center gap-1.5"><Star size={14} className="fill-[#c9a24b] text-[#c9a24b]" /> Pure cotton Bareilly manjha</span>
               <span className="flex items-center gap-1.5"><Truck size={15} /> Pan-India 4–6 days</span>
               <span className="flex items-center gap-1.5"><ShieldCheck size={15} /> 100% Genuine</span>
             </div>
@@ -63,7 +65,7 @@ export default async function Home() {
         <div className="marquee text-[13px] font-bold uppercase tracking-[0.2em]">
           {[0, 1].map((k) => (
             <span key={k} className="flex shrink-0 items-center">
-              {["100% Pure Cotton", "Adnan Special", "Black Panther", "Bareilly Craft", "Pan-India Shipping", "Tournament Grade"].map((t) => (
+              {["VAYUSHASTRA Sankal 8", "VAYUSHASTRA PANDA 5", "THE ROCK BREAKER, Sankal 8", "THE ROCK BREAKER, PANDA 5", "Pan-India Shipping", "Tournament Grade"].map((t) => (
                 <span key={t + k} className="mx-6 flex items-center gap-6">{t} <span className="text-[#c9a24b]">✦</span></span>
               ))}
             </span>
@@ -79,18 +81,18 @@ export default async function Home() {
             <h2 className="mt-2 font-serif text-[clamp(1.8rem,4vw,2.8rem)] font-bold leading-tight">Three generations.<br />One promise — <em className="text-[#7a1f1f]">sharp, honest manjha.</em></h2>
             <p className="mt-4 leading-relaxed text-stone-600">Every VPB reel starts as pure cotton thread in the gallis of Bareilly — boiled in rice-starch, coated with authentic Bareilly manjha paste, dried in the sun and tested metre by metre. No shortcuts. No mixing. Just the manjha our own family flies.</p>
             <div className="mt-6 grid grid-cols-3 gap-4">
-              {[["40+", "Years of craft"], ["2L+", "Reels flown"], ["4.8★", "Avg. rating"]].map(([n, l]) => (
+              {[["40+", "Years of craft"], ["2L+", "Reels flown"], ["100%", "Pure cotton"]].map(([n, l]) => (
                 <div key={l} className="rounded-2xl border border-[#ecdcb9] bg-white px-4 py-4 text-center"><p className="font-serif text-2xl font-black text-[#7a1f1f]">{n}</p><p className="text-xs font-semibold text-stone-500">{l}</p></div>
               ))}
             </div>
             <Link href="/about" className="btn-ghost mt-6">Our Brand Story <ArrowRight size={16} /></Link>
           </div>
-          <div className="reveal relative">
+          <div className="reveal relative mb-6">
             <div className="relative aspect-[4/4.6] w-full overflow-hidden rounded-[24px] shadow-[0_30px_60px_rgba(43,20,13,.2)]">
-              <SafeImg src={CRAFT_IMAGES[0]} alt="VPB craftsmanship" sizes="50vw" className="object-cover" />
+              <SafeImg src={HOMEPAGE_CRAFT_IMAGES[1]} alt="Karigar coating cotton threads with colourful manjha paste" sizes="50vw" className="object-cover" />
             </div>
-            <div className="absolute -bottom-6 -left-4 hidden w-56 overflow-hidden rounded-2xl border-4 border-[#fffaf0] shadow-xl sm:block">
-              <div className="relative aspect-[4/3] w-full"><SafeImg src={CRAFT_IMAGES[2]} alt="Manjha spools" sizes="220px" className="object-cover" /></div>
+            <div className="absolute -bottom-6 -left-4 w-40 overflow-hidden rounded-2xl border-4 border-[#fffaf0] shadow-xl sm:w-56">
+              <div className="relative aspect-[4/3] w-full"><SafeImg src={HOMEPAGE_CRAFT_IMAGES[0]} alt="Hand-finishing a red manjha reel" sizes="220px" className="object-cover" /></div>
             </div>
             <div className="absolute -right-3 top-6 rounded-2xl bg-[#1c0f0a] px-5 py-4 text-[#f0d9a8] shadow-xl">
               <p className="font-serif text-xl font-black text-[#f5d67b]">100%</p><p className="text-xs font-bold uppercase tracking-widest">Pure Cotton</p>
@@ -129,7 +131,7 @@ export default async function Home() {
         <section className="reveal relative overflow-hidden rounded-[26px] bg-[#1c0f0a]">
           <div className="grid lg:grid-cols-2">
             <div className="relative min-h-[320px]">
-              <SafeImg src="https://images.pexels.com/photos/12672112/pexels-photo-12672112.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940" alt="Manjha making" sizes="50vw" className="object-cover" />
+              <SafeImg src={HOMEPAGE_CRAFT_IMAGES[2]} alt="Preparing pure cotton thread by hand in the manjha workshop" sizes="50vw" className="object-cover" />
               <div className="absolute inset-0 bg-gradient-to-r from-transparent to-[#1c0f0a]/60" />
             </div>
             <div className="p-8 sm:p-12">
@@ -175,17 +177,9 @@ export default async function Home() {
           <div className="mt-7 grid grid-cols-2 gap-4 lg:grid-cols-4">{showFeat.map((p: any) => (<ProductCard key={p.id} p={p} />))}</div>
         </section>
 
-        {/* REVIEWS */}
         <section>
-          <SectionHead kicker="Social Proof" title="Loved on Terraces Across India" sub="2,400+ verified reviews. 4.8 average. Zero paid reviews." />
-          <div className="mt-8 grid gap-4 md:grid-cols-3">
-            {[["Rohit S. — Jaipur", "Adnan 9 Cord Special", "Pench hi khatam. Cut 11 kites in one session on Uttarayan. Coating even, no hand cuts. Best manjha I've flown in 10 years."], ["Imran K. — Bareilly", "Black Panther 9 Cord", "Genuine Panther. Dark, aggressive, holds tension beautifully. Delivery to Bareilly in 2 days, packing superb."], ["Mehul P. — Ahmedabad", "Nawab Premium 9 Cord", "Silky release, brutal bite. Worth every rupee. VPB support even helped me pick cord for 15 Aug winds."]].map(([n, pr, t]) => (
-              <figure key={n} className="reveal rounded-[20px] border border-[#ecdcb9] bg-white p-6">
-                <Stars v={5} /><blockquote className="mt-3 text-[14.5px] leading-relaxed text-stone-700">“{t}”</blockquote>
-                <figcaption className="mt-4 border-t border-dashed border-[#e7d6b8] pt-3"><p className="text-sm font-bold">{n}</p><p className="text-xs text-[#7a1f1f]">Verified — {pr}</p></figcaption>
-              </figure>
-            ))}
-          </div>
+          <SectionHead kicker="Your Feedback" title="Every Reel Has a Story" sub="Share your experience in English, Hindi or Gujarati." />
+          <SampleReviews />
         </section>
 
         {/* AUTHENTICITY + DELIVERY */}

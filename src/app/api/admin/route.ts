@@ -1,8 +1,8 @@
 import { readJson, isUuid } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { products, categories, orders, orderItems, users, banners, siteContent } from "@/db/schema";
-import { eq, desc, sql, or, ne, and } from "drizzle-orm";
+import { reviews, products, categories, orders, orderItems, users, banners, siteContent } from "@/db/schema";
+import { eq, desc, sql, or, ne, and, getTableColumns } from "drizzle-orm";
 import { slugify } from "@/lib/auth";
 import { sameOrigin, DeliveryError } from "@/lib/shipment-rules";
 import { activeUser, rateLimit, deliveryFailure } from "@/lib/delivery-server";
@@ -38,6 +38,7 @@ export async function GET(req: Request) {
       if (q) data = data.filter((p: any) => (p.name + p.sku + (p.brand || "")).toLowerCase().includes(q.toLowerCase()));
       return NextResponse.json({ ok: true, products: data });
     }
+    if (res === 'reviews') return NextResponse.json({ ok: true, reviews: await db.select({ ...getTableColumns(reviews), productName: products.name }).from(reviews).leftJoin(products, eq(products.id, reviews.productId)).orderBy(desc(reviews.createdAt)).limit(200) });
     if (res === "categories") return NextResponse.json({ ok: true, categories: await db.select().from(categories).orderBy(categories.sortOrder) });
     if (res === "orders") {
       let all = await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(200);
@@ -80,10 +81,21 @@ export async function POST(req: Request) {
     await rateLimit("admin-write:" + (await activeUser(req)).id, 90, 60);
     if (body.id && !isUuid(body.id)) throw new DeliveryError('Invalid record ID');
     const res = body.res;
+    if (res === 'review') {
+      if (!isUuid(body.id) || !['approved', 'rejected', 'pending'].includes(body.status)) throw new DeliveryError('Invalid review moderation');
+      const [saved] = await db.update(reviews).set({ status: body.status }).where(eq(reviews.id, body.id)).returning({ id: reviews.id });
+      if (!saved) throw new DeliveryError('Review not found', 404);
+      return NextResponse.json({ ok: true });
+    }
     if (res === "product") {
       const d = body.data;
       if (!d || typeof d.name !== "string" || d.name.length > 200 || !Number.isSafeInteger(Number(d.price)) || Number(d.price) < 1 || !d.sku || !Number.isInteger(Number(d.stockQuantity ?? 10)) || Number(d.stockQuantity ?? 10) < 0) return NextResponse.json({ ok: false, error: "Name, price, SKU required" }, { status: 400 });
       const slug = d.slug || slugify(d.name);
+      if (d.active !== false && /\b(kites?|patangs?)\b/i.test(d.name) && !/\b(manjha|saddi|charkhi)\b/i.test(d.name)) throw new DeliveryError('Kite products must remain inactive');
+      if (d.categoryId && d.active !== false) {
+        const [category] = await db.select().from(categories).where(eq(categories.id, d.categoryId));
+        if (category && /(^|-)(kites?|patangs?)(-|$)/i.test(category.slug)) throw new DeliveryError('Choose a manjha or accessories category');
+      }
       const images = Array.isArray(d.images) ? d.images.filter(Boolean) : d.image ? [d.image] : [];
       const payload: any = {
         name: d.name, slug, description: d.description || "", categoryId: d.categoryId || null, brand: d.brand || "VPB",
@@ -107,6 +119,7 @@ export async function POST(req: Request) {
       const d = body.data;
       if (!d || typeof d.name !== 'string' || !d.name.trim()) return NextResponse.json({ ok: false, error: "Name required" }, { status: 400 });
       const slug = d.slug || slugify(d.name);
+      if (d.active !== false && /(^|-)(kites?|patangs?)(-|$)/i.test(slug)) throw new DeliveryError('Kite categories must remain inactive');
       const payload = { name: d.name, slug, description: d.description || null, image: d.image || null, active: d.active !== false };
       const [saved] = body.id ? await db.update(categories).set(payload).where(eq(categories.id, body.id)).returning({ id: categories.id }) : await db.insert(categories).values(payload).returning({ id: categories.id });
       if (!saved) throw new DeliveryError('Category not found', 404);

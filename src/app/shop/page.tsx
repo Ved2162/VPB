@@ -93,7 +93,7 @@ function ShopInner() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6">
       <p className="text-[12px] font-bold uppercase tracking-[0.28em] text-[#7a1f1f]">VPB Shop</p>
-      <h1 className="mt-1 font-serif text-[clamp(1.8rem,4vw,2.8rem)] font-bold">Shop Premium Manjha & Kites</h1>
+      <h1 className="mt-1 font-serif text-[clamp(1.8rem,4vw,2.8rem)] font-bold">Shop Premium Manjha</h1>
       <div className="relative mt-5 max-w-xl">
         <div className="flex items-center overflow-hidden rounded-full border-2 border-[#e7d6b8] bg-white focus-within:border-[#7a1f1f]">
           <Search size={18} className="ml-4 text-stone-400" />

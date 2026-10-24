@@ -30,7 +30,7 @@ function scan(data, label, history = false) {
     for (const match of data.matchAll(regex)) {
       const fixture = /(?:tests[\\/]|scripts[\\/]e2e-server\.mjs)/.test(label) && (
         name === 'credential_url' && match[0] === ('postgresql' + '://postgres:postgres@') ||
-        name === 'literal_private_setting' && /^(?:isolated-|E2e-only-)/.test(match[1] || '')
+        name === 'literal_private_setting' && (/^(?:isolated-|E2e-only-)/.test(match[1] || '') || match[1] === 'review-tests-only-secret-not-a-real-production-credential')
       );
       if (fixture) fixtureMatches++; else hits.push(name);
     }

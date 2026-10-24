@@ -10,6 +10,7 @@ export async function createTestDatabase(beforeMigration?: (pg: PGlite) => Promi
   const baseline = Object.fromEntries(Object.entries(schema).filter(([name]) => !['productImages', 'invoiceCounters', 'orderInvoices', 'invoiceCancellations', 'orderNotifications', 'deliveryStaff', 'deliveryProviders', 'shipments', 'shipmentHistory', 'deliveryAudit', 'deliveryRateLimits'].includes(name)));
   const snapshot = generateDrizzleJson(baseline);
   delete snapshot.tables['public.users'].columns.username;
+  for (const column of ['language', 'status', 'is_demo']) delete snapshot.tables['public.reviews'].columns[column];
   delete snapshot.tables['public.users'].uniqueConstraints.users_username_unique;
   const statements = await generateMigration(generateDrizzleJson({}), snapshot);
   await pg.exec(statements.join('\n'));
@@ -20,5 +21,6 @@ export async function createTestDatabase(beforeMigration?: (pg: PGlite) => Promi
   await pg.exec(await readFile(new URL('../migrations/0004_invoices.sql', import.meta.url), 'utf8'));
     await pg.exec(await readFile(new URL('../migrations/0005_product_images.sql', import.meta.url), 'utf8'));
   await pg.exec(await readFile(new URL('../migrations/0006_official_couriers.sql', import.meta.url), 'utf8'));
+  await pg.exec(await readFile(new URL('../migrations/0007_reviews.sql', import.meta.url), 'utf8'));
   return { pg, db: drizzle(pg) };
 }

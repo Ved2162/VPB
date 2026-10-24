@@ -1,4 +1,5 @@
 "use client";
+import { SampleReviews } from '@/components/sample-reviews';
 import { useApiResource } from "@/lib/use-api-resource";
 import { SectionLoader, ProductSkeleton, ButtonLoader, LoadingError } from "@/components/loading";
 import { apiFetch } from "@/lib/api-client";
@@ -23,7 +24,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   const { add } = useCart();
   const { toast } = useToast();
   const { me } = useAuth();
-  const [revForm, setRevForm] = useState({ rating: 5, title: "", review: "" });
+  const [revForm, setRevForm] = useState({ rating: 5, title: "", review: "", language: "en" });
 
   const product = useApiResource<any>('/api/products/' + slug);
   const data = product.data;
@@ -56,7 +57,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
     try {
     const r = await apiFetch("/api/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ res: "review", productId: p.id, ...revForm }) });
     const j = await r.json();
-    if (j.ok) { toast("Review submitted. Thank you!"); setRevForm({ rating: 5, title: "", review: "" }); load(); }
+    if (j.ok) { toast("Review submitted for moderation. Thank you!"); setRevForm({ rating: 5, title: "", review: "", language: "en" }); load(); }
     else toast(j.error || "Failed");
     } finally { setReviewBusy(false); }
   };
@@ -82,7 +83,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
         <div>
           <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-[#a07c2c]">{p.brand} {p.cordCount ? `• ${p.cordCount} Cord` : ""}</p>
           <h1 className="mt-1 font-serif text-[clamp(1.6rem,3.6vw,2.5rem)] font-bold leading-tight">{p.name}</h1>
-          <div className="mt-2 flex items-center gap-2"><Stars v={p.rating} /><span className="text-sm font-bold">{Number(p.rating).toFixed(1)}</span><span className="text-sm text-stone-400">• {p.reviewCount} reviews • SKU {p.sku}</span></div>
+          <div className="mt-2 flex items-center gap-2">{p.reviewCount > 0 && <Stars v={p.rating} />}<span className="text-sm font-bold">{p.reviewCount > 0 ? Number(p.rating).toFixed(1) : "Not rated yet"}</span><span className="text-sm text-stone-400">• {p.reviewCount} reviews • SKU {p.sku}</span></div>
           <div className="mt-3 flex items-baseline gap-3">
             <span className="font-serif text-3xl font-black">{money(p.price)}</span>
             {p.comparePrice > p.price && <span className="text-lg text-stone-400 line-through">{money(p.comparePrice)}</span>}
@@ -129,12 +130,12 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
       {/* REVIEWS */}
       <div className="mt-14 grid gap-8 lg:grid-cols-[1fr_360px]">
         <div>
-          <h3 className="font-serif text-2xl font-bold">Customer Reviews ({data.reviews?.length || 0})</h3>
+          <h3 className="font-serif text-2xl font-bold">Customer Reviews ({p.reviewCount || 0})</h3>
           <div className="mt-4 space-y-3">
             {(data.reviews || []).length === 0 && <p className="text-sm text-stone-500">No reviews yet. Be the first to review this reel.</p>}
             {(data.reviews || []).map((r: any) => (
               <div key={r.id} className="card p-5"><div className="flex items-center justify-between"><Stars v={r.rating} /><span className="text-xs text-stone-400">{new Date(r.createdAt).toLocaleDateString("en-IN")}</span></div>
-                <p className="mt-2 font-bold">{r.title || r.userName}</p><p className="text-sm text-stone-600">{r.review}</p><p className="mt-2 text-xs font-bold text-green-700">✓ Verified Buyer — {r.userName}</p></div>
+                <p className="mt-2 font-bold">{r.title || r.userName}</p><p className="break-words whitespace-pre-wrap text-sm text-stone-600">{r.review}</p><p className="mt-2 text-xs text-stone-500">{r.userName} / {r.language}</p>{r.verifiedPurchase && <p className="mt-1 text-xs font-bold text-green-700">Verified Buyer</p>}</div>
             ))}
           </div>
         </div>
@@ -142,14 +143,15 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
           <p className="font-serif text-lg font-bold">Write a Review</p>
           {!me && <p className="mt-1 text-sm text-stone-500">Please <Link href="/login" className="font-bold text-[#7a1f1f]">login</Link> to review.</p>}
           <p className="label mt-3">Rating</p>
-          <div className="flex gap-1">{[1, 2, 3, 4, 5].map((i) => (<button key={i} onClick={() => setRevForm({ ...revForm, rating: i })}>★<span className="sr-only">{i}</span></button>))}
-            <span className="ml-1 text-sm font-bold">{revForm.rating}/5 — click stars</span></div>
-          <div className="mt-1 flex gap-1">{[1, 2, 3, 4, 5].map((i) => (<button key={i} onClick={() => setRevForm({ ...revForm, rating: i })} className={`text-2xl ${i <= revForm.rating ? "text-[#c9a24b]" : "text-stone-300"}`}>★</button>))}</div>
-          <p className="label mt-3">Title</p><input value={revForm.title} onChange={(e) => setRevForm({ ...revForm, title: e.target.value })} className="input" placeholder="Sharp & smooth!" />
-          <p className="label mt-3">Review</p><textarea value={revForm.review} onChange={(e) => setRevForm({ ...revForm, review: e.target.value })} className="input min-h-24" placeholder="How was the pench?" />
+          <div className="mt-1 flex gap-1">{[1, 2, 3, 4, 5].map((i) => (<button key={i} aria-label={`${i} stars`} aria-pressed={i === revForm.rating} onClick={() => setRevForm({ ...revForm, rating: i })} className={`text-2xl ${i <= revForm.rating ? "text-[#c9a24b]" : "text-stone-300"}`}>★</button>))}</div>
+          <label className="label mt-3 block" htmlFor="review-language">Language</label><select id="review-language" className="input" value={revForm.language} onChange={e => setRevForm({ ...revForm, language: e.target.value })}><option value="en">English</option><option value="hi-Latn">Roman Hindi</option><option value="gu-Latn">Roman Gujarati</option></select>
+          <p className="label mt-3">Title</p><input maxLength={160} aria-label="Review title" value={revForm.title} onChange={(e) => setRevForm({ ...revForm, title: e.target.value })} className="input" placeholder="Sharp & smooth!" />
+          <p className="label mt-3">Review</p><textarea maxLength={5000} aria-label="Review text" value={revForm.review} onChange={(e) => setRevForm({ ...revForm, review: e.target.value })} className="input min-h-24" placeholder="How was the pench?" />
           <button onClick={submitReview} disabled={reviewBusy} className="btn-primary mt-3 w-full">{reviewBusy ? <ButtonLoader label="Submitting…" /> : "Submit Review"}</button>
         </div>
       </div>
+
+      <SampleReviews />
 
       {data.related?.length > 0 && (
         <div className="mt-14"><h3 className="font-serif text-2xl font-bold">Related Products</h3>

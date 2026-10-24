@@ -42,7 +42,7 @@ test('protected routes reject forged sessions; API mutations reject cross-origin
 test('pending payment confirmation retries the same receipt without creating another checkout', async ({ page, context }) => {
   await context.request.post('/api/auth', { data: { action: 'login', phone: '9000000102', password: 'E2e-only-password-2026' } });
   await page.addInitScript(() => {
-    localStorage.setItem('vpb_cart', JSON.stringify([{ id: '20000000-0000-4000-8000-000000000001', slug: 'loader-test-kite', name: 'Loader test kite', price: 100, image: '/images/manjha/m01.png', qty: 1, stock: 25 }]));
+    localStorage.setItem('vpb_cart', JSON.stringify([{ id: '20000000-0000-4000-8000-000000000001', slug: 'loader-test-manjha', name: 'Loader test manjha', price: 100, image: '/images/manjha/m01.png', qty: 1, stock: 25 }]));
     window.Razorpay = class {
       constructor(public options: { handler: (receipt: object) => void }) {}
       on() {}

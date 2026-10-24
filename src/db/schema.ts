@@ -158,6 +158,9 @@ export const reviews = pgTable("reviews", {
   rating: integer("rating").notNull(),
   title: varchar("title", { length: 160 }),
   review: text("review"),
+  language: varchar("language", { length: 20 }).default("en").notNull(),
+  status: varchar("status", { length: 20 }).default("pending").notNull(),
+  isDemo: boolean("is_demo").default(false).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

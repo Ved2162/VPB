@@ -66,7 +66,7 @@ test('pending orders and failed finalization never queue or send', async () => {
   await processOrderNotifications(order.id); expect(transport).not.toHaveBeenCalled();
 });
 test('failed gateway order creation rolls back the order and cannot queue confirmation', async () => {
-  const [product] = await database.db.insert(schema.products).values({ name: 'Test kite', slug: 'wa-failure-test', sku: 'WA-FAILURE', price: 123, stockQuantity: 5 }).returning();
+  const [product] = await database.db.insert(schema.products).values({ name: 'Test manjha', slug: 'wa-failure-test', sku: 'WA-FAILURE', price: 123, stockQuantity: 5 }).returning();
   const ordersBefore = (await database.db.select().from(schema.orders)).length;
   const notificationsBefore = (await database.db.select().from(schema.orderNotifications)).length;
   vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create: async () => { throw new Error('gateway unavailable'); } } } as unknown as NonNullable<ReturnType<typeof gateway.getRazorpay>>);

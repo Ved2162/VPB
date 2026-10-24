@@ -1,7 +1,7 @@
 import { BrandedLink as Link } from "@/components/loading";
 import { ArrowRight } from "lucide-react";
 import { SectionHead, CtaBand, SafeImg } from "@/components/site";
-import { CRAFT_IMAGES } from "@/lib/data";
+import { WORKSHOP_IMAGES } from "@/lib/data";
 
 export default function About() {
   return (
@@ -9,7 +9,7 @@ export default function About() {
       <p className="text-[12px] font-bold uppercase tracking-[0.28em] text-[#7a1f1f]">About VPB</p>
       <h1 className="mt-1 max-w-3xl font-serif text-[clamp(2rem,5vw,3.4rem)] font-black leading-tight">Verai Patang Bhandar —<br />Bareilly&apos;s House of Sharp Threads.</h1>
       <div className="mt-8 grid gap-10 lg:grid-cols-2">
-        <div className="relative aspect-[4/4.4] w-full overflow-hidden rounded-[24px]"><SafeImg src={CRAFT_IMAGES[0]} alt="VPB heritage" sizes="50vw" className="object-cover" /></div>
+        <div className="relative aspect-[4/4.4] w-full overflow-hidden rounded-[24px]"><SafeImg src={WORKSHOP_IMAGES[4]} alt="Karigar applying manjha paste to cotton threads at the VPB workshop" sizes="50vw" className="object-cover object-[50%_60%]" /></div>
         <div className="prose-vpb text-[15.5px]">
           <p><b className="text-[#2b140d]">VPB began on a Bareilly rooftop</b> — with a charkhi, a pot of rice-starch manjha paste, and a grandfather who believed a thread should sing before it cuts.</p>
           <p>Three generations later, Verai Patang Bhandar still prepares manjha the slow way: pure cotton yarn, authentic Bareilly manjha paste, sun-drying, and metre-by-metre testing. Our karigars sign every batch — because reputation flies with every reel.</p>
@@ -31,8 +31,8 @@ export default function About() {
         </div>
       </div>
       <div className="mt-14 grid gap-4 lg:grid-cols-2">
-        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-[22px]"><SafeImg src={CRAFT_IMAGES[1]} alt="Karigar" sizes="50vw" className="object-cover" /></div>
-        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-[22px]"><SafeImg src={CRAFT_IMAGES[2]} alt="Spools" sizes="50vw" className="object-cover" /></div>
+        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-[22px]"><SafeImg src={WORKSHOP_IMAGES[5]} alt="Close view of hand-coated manjha threads" sizes="50vw" className="object-cover object-[50%_60%]" /></div>
+        <div className="relative aspect-[16/10] w-full overflow-hidden rounded-[22px]"><SafeImg src={WORKSHOP_IMAGES[1]} alt="Manjha reel beside rows of cotton thread in the workshop" sizes="50vw" className="object-cover object-[50%_80%]" /></div>
       </div>
       <div className="mt-14"><CtaBand /></div>
     </div>

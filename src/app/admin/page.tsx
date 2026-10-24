@@ -1,4 +1,5 @@
 "use client";
+import { isKiteIdentity } from '@/lib/catalog-identity';
 import { InvoiceActions } from '@/components/invoice-actions';
 import { ButtonLoader } from "@/components/loading";
 import { useApiActivity, SectionLoader, TableSkeleton } from "@/components/loading";
@@ -21,6 +22,7 @@ export default function Admin() {
   const [products, setProducts] = useState<any[]>([]);
   const [cats, setCats] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
+  const [reviewRows, setReviewRows] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [content, setContent] = useState<any>({ banners: [], content: [] });
   const [q, setQ] = useState("");
@@ -46,12 +48,13 @@ export default function Admin() {
     const controller = new AbortController(); loadRequest.current = controller;
 
     const qs = (extra: string) => apiFetch("/api/admin?res=" + extra + (query ? "&q=" + encodeURIComponent(query) : ""), { credentials: "include", signal: controller.signal }).then(async (r) => { const j = await r.json(); if (!r.ok || !j.ok) throw new Error(j.error || "Unable to load dashboard"); if (controller.signal.aborted) throw new DOMException("Cancelled", "AbortError"); setLoadError(""); return j; });
-      const resource: Record<string, string> = { dash: 'stats', products: 'products', cats: 'categories', orders: 'orders', customers: 'customers', content: 'content' };
+      const resource: Record<string, string> = { dash: 'stats', products: 'products', cats: 'categories', orders: 'orders', customers: 'customers', content: 'content', reviews: 'reviews' };
     return qs(resource[t] || 'stats').then(async j => {
       if (t === 'dash') setStats(j);
       if (t === 'products') { setProducts(j.products); const categories = await qs('categories'); setCats(categories.categories); }
       if (t === 'cats') setCats(j.categories);
       if (t === 'orders') setOrders(j.orders);
+      if (t === 'reviews') setReviewRows(j.reviews);
       if (t === 'customers') setCustomers(j.customers);
       if (t === 'content') setContent(j);
       if (!controller.signal.aborted) setLoaded(previous => ({ ...previous, [t]: true }));
@@ -114,7 +117,7 @@ export default function Admin() {
     } catch { toast('Unable to save order. Please retry.'); } finally { setBusy(false); }
   };
 
-  const tabs = [["dash", LayoutDashboard, "Dashboard"], ["products", Package, "Products"], ["cats", Tags, "Categories"], ["orders", ShoppingCart, "Orders"], ["customers", Users, "Customers"], ["content", Megaphone, "Content"]];
+  const tabs = [["dash", LayoutDashboard, "Dashboard"], ["products", Package, "Products"], ["cats", Tags, "Categories"], ["orders", ShoppingCart, "Orders"], ["customers", Users, "Customers"], ["content", Megaphone, "Content"], ["reviews", Eye, "Reviews"]];
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
@@ -141,6 +144,8 @@ export default function Admin() {
           <button onClick={() => load()} className="btn-ghost !border-red-300 !py-1.5 !text-[12px] !text-red-800">Retry</button>
         </div>
       )}
+
+      {tab === 'reviews' && <div className="mt-6 space-y-3"><p className="text-sm text-stone-500">Approve only genuine customer feedback. Legacy reviews await review; samples never affect ratings.</p>{reviewRows.length === 0 && <p>No reviews to moderate.</p>}{reviewRows.map(r => <div key={r.id} className="card break-words p-5"><p className="font-bold">{r.productName} / {r.rating}/5 / {r.language} / {r.status}{r.isDemo ? ' / Demo' : ''}</p><p>{r.title}</p><p className="whitespace-pre-wrap text-sm">{r.review}</p><div className="mt-3 flex gap-2">{['approved', 'rejected', 'pending'].map(status => <button disabled={busy} key={status} className="btn-ghost !py-1 text-sm" onClick={() => changeRecord('/api/admin', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ res: 'review', id: r.id, status }) }, 'Review updated')}>{status === 'approved' ? 'Approve' : status === 'rejected' ? 'Reject' : 'Hold'}</button>)}</div></div>)}</div>}
 
       {tab === "dash" && stats && (
         <div className="mt-6">
@@ -198,7 +203,7 @@ export default function Admin() {
         <div className="mt-6">
           <button onClick={() => { setEditC({ name: "", slug: "", description: "", image: "" }); setShowC(true); }} className="btn-primary !py-2 text-[13px]"><Plus size={15} /> Add Category</button>
           <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {cats.map((c) => (
+            {cats.filter(c => !isKiteIdentity(c)).map((c) => (
               <div key={c.id} className="card flex gap-3 p-4">
                 <span className="relative h-16 w-16 shrink-0 overflow-hidden rounded-xl bg-[#f6ead2]"><SafeImg src={c.image} alt={c.name} sizes="64px" className="object-cover" /></span>
                 <div className="min-w-0 flex-1"><b>{c.name}</b><p className="truncate text-xs text-stone-400">/{c.slug} {c.active ? "" : "• Hidden"}</p>
@@ -306,7 +311,7 @@ export default function Admin() {
               <div><p className="label">Stock Qty</p><input type="number" value={editP.stockQuantity} onChange={(e) => setEditP({ ...editP, stockQuantity: e.target.value })} className="input" /></div>
               <div><p className="label">Brand</p><input value={editP.brand} onChange={(e) => setEditP({ ...editP, brand: e.target.value })} className="input" /></div>
               <div><p className="label">Cord Count</p><input type="number" value={editP.cordCount} onChange={(e) => setEditP({ ...editP, cordCount: e.target.value })} className="input" /></div>
-              <div><p className="label">Category</p><select value={editP.categoryId || ""} onChange={(e) => setEditP({ ...editP, categoryId: e.target.value })} className="input">{cats.map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}</select></div>
+              <div><p className="label">Category</p><select value={editP.categoryId || ""} onChange={(e) => setEditP({ ...editP, categoryId: e.target.value })} className="input">{cats.filter(c => !isKiteIdentity(c)).map((c) => (<option key={c.id} value={c.id}>{c.name}</option>))}</select></div>
               <div><p className="label">Stock Status</p><select value={editP.stockStatus || "in_stock"} onChange={(e) => setEditP({ ...editP, stockStatus: e.target.value })} className="input"><option value="in_stock">In Stock</option><option value="out_of_stock">Out of Stock</option></select></div>
               <div className="sm:col-span-2"><ProductImagePicker value={typeof editP.images === "string" ? editP.images : (editP.images || []).join("\n")} onChange={(images) => setEditP((previous: any) => ({ ...previous, images }))} disabled={busy} onUploading={setUploadingImages} /></div>
               <div className="sm:col-span-2"><p className="label">Description</p><textarea value={editP.description || ""} onChange={(e) => setEditP({ ...editP, description: e.target.value })} className="input min-h-20" /></div>

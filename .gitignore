@@ -106,5 +106,6 @@ audit-dependencies.json
 audit-production.json
 lint-baseline.json
 tmp/pdfs/
+tmp/
 .env.*
 !.env.example

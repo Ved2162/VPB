@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test';
 function gate() { let release!: () => void; const promise = new Promise<void>(resolve => { release = resolve; }); return { promise, release }; }
 test('fast refresh finishes before the display threshold and keeps the catalog visible', async ({ page }) => {
   await page.goto('/shop');
-  await expect(page.getByText('Loader test kite', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Loader test manjha', { exact: true }).first()).toBeVisible();
   await expect(page.locator('.vpb-request-activity')).toHaveCount(0);
   await page.route('**/api/products?**', route => route.fulfill({ json: { ok: true, products: [], total: 0 } }));
   await page.evaluate(() => {
@@ -24,7 +24,7 @@ test('fast refresh finishes before the display threshold and keeps the catalog v
   await expect(page.locator('.vpb-global-loader')).toHaveCount(0);
 });
 async function seedCart(page: Page) {
-  await page.addInitScript(() => localStorage.setItem('vpb_cart', JSON.stringify([{ id: '20000000-0000-4000-8000-000000000001', slug: 'loader-test-kite', name: 'Loader test kite', price: 100, image: '/images/manjha/m01.png', qty: 1, stock: 25 }])));
+  await page.addInitScript(() => localStorage.setItem('vpb_cart', JSON.stringify([{ id: '20000000-0000-4000-8000-000000000001', slug: 'loader-test-manjha', name: 'Loader test manjha', price: 100, image: '/images/manjha/m01.png', qty: 1, stock: 25 }])));
 }
 test('catalog loader uses the circular VPB mark, handles failure/retry, preserves data on refresh', async ({ page }) => {
   const slow = gate(); let first = true;
@@ -42,11 +42,11 @@ test('catalog loader uses the circular VPB mark, handles failure/retry, preserve
   await expect(page.getByRole('alert').filter({ hasText: 'Catalog connection interrupted' }).first()).toBeVisible();
   await expect(section).toHaveCount(0);
   await page.getByRole('button', { name: 'Retry', exact: true }).first().click();
-  await expect(page.getByText('Loader test kite', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Loader test manjha', { exact: true }).first()).toBeVisible();
   const refresh = gate();
   await page.route('**/api/products?**', async route => { await refresh.promise; await route.continue(); });
   await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await expect(page.getByText('Loader test kite', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Loader test manjha', { exact: true }).first()).toBeVisible();
   await expect(page.locator('.vpb-global-loader')).toHaveCount(0);
   refresh.release();
   await expect(page.locator('.vpb-request-activity')).toHaveCount(0);
@@ -67,11 +67,11 @@ test('independent concurrent dashboard requests keep activity until both finish'
 });
 test('product, account, cart and checkout use bounded section/button loading without blocking local updates', async ({ page, context }) => {
   const product = gate();
-  await page.route('**/api/products/loader-test-kite', async route => { await product.promise; await route.continue(); });
-  await page.goto('/product/loader-test-kite');
+  await page.route('**/api/products/loader-test-manjha', async route => { await product.promise; await route.continue(); });
+  await page.goto('/product/loader-test-manjha');
   await expect(page.getByRole('status').filter({ hasText: 'Loading product details' })).toBeVisible();
   product.release();
-  await expect(page.getByRole('heading', { name: 'Loader test kite', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Loader test manjha', exact: true })).toBeVisible();
   await context.request.post('/api/auth', { data: { action: 'login', phone: '9000000102', password: 'E2e-only-password-2026' } });
   const orders = gate();
   await page.route('**/api/orders', async route => { await orders.promise; await route.continue(); });
@@ -100,9 +100,9 @@ test('mobile reduced motion, dark circular mark and browser history remain usabl
   await page.setViewportSize({ width: 390, height: 844 });
   await page.emulateMedia({ reducedMotion: 'reduce' });
   const slow = gate();
-  await page.route('**/api/products/loader-test-kite', async route => { await slow.promise; await route.continue(); });
+  await page.route('**/api/products/loader-test-manjha', async route => { await slow.promise; await route.continue(); });
   await page.goto('/about');
-  await page.goto('/product/loader-test-kite');
+  await page.goto('/product/loader-test-manjha');
   await page.evaluate(() => document.documentElement.setAttribute('data-theme', 'dark'));
   await expect(page.locator('.vpb-loader-wordmark').first()).toBeVisible();
   expect(await page.locator('.vpb-loader').first().evaluate(el => getComputedStyle(el).color)).toBe('rgb(240, 217, 168)');
@@ -110,10 +110,10 @@ test('mobile reduced motion, dark circular mark and browser history remain usabl
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await page.screenshot({ path: 'test-results/loader-mobile.png', fullPage: true });
   slow.release();
-  await expect(page.getByRole('heading', { name: 'Loader test kite', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Loader test manjha', exact: true })).toBeVisible();
   await page.goBack(); await expect(page).toHaveURL(/\/about$/);
-  await page.goForward(); await expect(page).toHaveURL(/\/product\/loader-test-kite$/);
-  await expect(page.getByRole('heading', { name: 'Loader test kite', exact: true })).toBeVisible();
+  await page.goForward(); await expect(page).toHaveURL(/\/product\/loader-test-manjha$/);
+  await expect(page.getByRole('heading', { name: 'Loader test manjha', exact: true })).toBeVisible();
 });
 
 
@@ -154,7 +154,7 @@ test('initial overlay is centered, blurred and exclusive across viewport sizes; 
   expect(await page.locator('main').evaluate(el => (el as HTMLElement).inert)).toBe(false);
   await expect(page.locator('.vpb-loader').filter({ hasText: 'Loading products' })).toBeVisible();
   products.release();
-  await expect(page.getByText('Loader test kite', { exact: true }).first()).toBeVisible();
+  await expect(page.getByText('Loader test manjha', { exact: true }).first()).toBeVisible();
   await expect(page.locator('.vpb-request-activity')).toHaveCount(0);
   await expect(page.locator('.vpb-loader-origami, .vpb-loader-thread, .vpb-loader-logo')).toHaveCount(0);
 });

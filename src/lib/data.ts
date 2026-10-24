@@ -32,10 +32,21 @@ export const CRAFT_IMAGES = [
 ];
 
 export const GALLERY = [
-  { src: "https://images.pexels.com/photos/30333344/pexels-photo-30333344.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", label: "Uttarayan 2025" },
-  { src: "https://images.pexels.com/photos/15049300/pexels-photo-15049300.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", label: "9 Cord — Adnan Special" },
-  { src: "https://images.pexels.com/photos/15470478/pexels-photo-15470478.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", label: "Manjha Spools" },
-  { src: "https://images.pexels.com/photos/5005214/pexels-photo-5005214.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", label: "Patang Collection" },
-  { src: "https://images.pexels.com/photos/4440344/pexels-photo-4440344.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", label: "Karigar Hands" },
-  { src: "https://images.pexels.com/photos/30470265/pexels-photo-30470265.jpeg?auto=compress&cs=tinysrgb&dpr=2&h=650&w=940", label: "Sankranti Sky" },
+  { src: "/images/craft/craft-01.webp", label: "Hand-finished Reels" },
+  { src: "/images/workshop/workshop-05.webp", label: "Karigar at Work" },
+  { src: "/images/craft/craft-02.webp", label: "Manjha Paste Coating" },
+  { src: "/images/workshop/workshop-04.webp", label: "Workshop Reels" },
+  { src: "/images/craft/craft-03.webp", label: "Cotton Preparation" },
+  { src: "/images/workshop/workshop-06.webp", label: "Thread Finishing" },
+];
+
+// Original customer-supplied workshop photos; web assets only change encoding.
+export const WORKSHOP_IMAGES = Array.from({ length: 7 }, (_, i) =>
+  `/images/workshop/workshop-${String(i + 1).padStart(2, "0")}.webp`
+);
+
+export const HOMEPAGE_CRAFT_IMAGES = [
+  "/images/craft/craft-01.webp",
+  "/images/craft/craft-02.webp",
+  "/images/craft/craft-03.webp",
 ];

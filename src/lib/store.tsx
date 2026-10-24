@@ -2,6 +2,7 @@
 import { apiFetch } from "@/lib/api-client";
 import React, { createContext, useContext, useEffect, useMemo, useState, useCallback, useRef, useSyncExternalStore } from "react";
 
+import { isKiteIdentity } from './catalog-identity';
 import { localStore } from "./browser-state";
 
 export type CartLine = { id: string; slug: string; name: string; price: number; comparePrice?: number | null; image: string; qty: number; stock: number };
@@ -41,6 +42,7 @@ async function fetchMe(): Promise<Me> {
 export function Providers({ children }: { children: React.ReactNode }) {
   const lines = useSyncExternalStore(cartStore.subscribe, cartStore.snapshot, cartStore.serverSnapshot);
   const setLines = cartStore.update;
+  useEffect(() => { if (cartStore.snapshot().some(isKiteIdentity)) cartStore.update(previous => previous.filter(line => !isKiteIdentity(line))); }, []);
   const cartReady = useSyncExternalStore(cartStore.subscribe, () => true, () => false);
   const [open, setOpen] = useState(false);
   const [lastAdded, setLastAdded] = useState(0);

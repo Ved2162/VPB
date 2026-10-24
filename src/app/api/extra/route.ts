@@ -1,8 +1,10 @@
+import { publicReviews } from '@/lib/reviews';
+import { publicProduct } from '@/lib/catalog';
 import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { addresses, reviews, products, users } from "@/db/schema";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, and } from "drizzle-orm";
 import { activeUser, rateLimit, deliveryFailure } from '@/lib/delivery-server';
 import { sameOrigin, textField, DeliveryError } from '@/lib/shipment-rules';
 import { isUuid } from '@/lib/http-security';
@@ -22,10 +24,8 @@ export async function GET(req: Request) {
     }
     if (res === "reviews") {
       const pid = u.searchParams.get("productId") || "";
-      const rows = pid
-        ? await db.select().from(reviews).where(eq(reviews.productId, pid)).orderBy(desc(reviews.createdAt)).limit(50)
-        : await db.select().from(reviews).orderBy(desc(reviews.createdAt)).limit(50);
-      return NextResponse.json({ ok: true, reviews: rows });
+      if (pid && !isUuid(pid)) throw new DeliveryError('Invalid product ID');
+      return NextResponse.json({ ok: true, reviews: await publicReviews(pid || undefined) });
     }
     return NextResponse.json({ ok: false, error: "unknown res" }, { status: 400 });
   } catch (e: any) {
@@ -67,13 +67,14 @@ export async function POST(req: Request) {
       const title = textField(body.title ?? '', 'title', 160), review = textField(body.review ?? '', 'review', 5000);
       await rateLimit('review:' + me.id, 10, 3600);
       if (!isUuid(productId) || !Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5) return NextResponse.json({ ok: false, error: "Rating required" }, { status: 400 });
-      await db.insert(reviews).values({ userId: me.id, productId, rating: Number(rating), title: title || null, review: review || null });
-      const pr = await db.select().from(products).where(eq(products.id, productId));
-      if (pr.length) {
-        const all = await db.select().from(reviews).where(eq(reviews.productId, productId));
-        const avg = all.reduce((a, r) => a + r.rating, 0) / all.length;
-        await db.update(products).set({ rating: avg.toFixed(2), reviewCount: all.length }).where(eq(products.id, productId));
-      }
+      if (!review.trim()) throw new DeliveryError('Please write a review');
+      const language = body.language ?? 'en';
+      if (!['en', 'hi-Latn', 'gu-Latn'].includes(language)) throw new DeliveryError('Invalid review language');
+      const [product] = await db.select({ id: products.id }).from(products).where(and(eq(products.id, productId), publicProduct));
+      if (!product) throw new DeliveryError('Product unavailable', 404);
+      const [previous] = await db.select({ id: reviews.id }).from(reviews).where(and(eq(reviews.userId, me.id), eq(reviews.productId, productId)));
+      if (previous) throw new DeliveryError('You have already submitted a review for this product', 409);
+      await db.insert(reviews).values({ userId: me.id, productId, rating: Number(rating), title: title || null, review, language, status: 'pending', isDemo: false });
       return NextResponse.json({ ok: true });
     }
     if (body.res === "pincode") {

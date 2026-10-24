@@ -10,7 +10,7 @@ export default function Contact() {
   const faqs = [
     ["How long is delivery?", "4–6 working days across India. Dispatched within 24 hours, vacuum-packed."],
     ["Is the manjha pure cotton?", "Yes — 100% pure cotton, no nylon mix. Every reel is batch-tested."],
-    ["Which cord should I buy?", "6 cord for daily flying, 9 cord for tournaments, 12/16 for big kites and strong winds."],
+    ["Which cord should I buy?", "6 cord for daily flying, 9 cord for tournaments, 12/16 for heavier tension and strong winds."],
     ["Do you offer COD?", "No, we currently accept UPI and Card payments only via Razorpay's secure checkout."],
     ["How long does delivery take?", "We dispatch within 24 hours. Delivery takes 4–6 working days across India. Live tracking is provided once shipped."],
   ];
@@ -55,7 +55,7 @@ export default function Contact() {
           </div>
           <div className="card p-6">
             <p className="font-serif text-lg font-bold">Bulk / Shop Orders</p>
-            <p className="mt-1 text-sm text-stone-500">Kite shops, clubs and Uttarayan resellers get wholesale rates above 20 reels. WhatsApp us with your city + quantity.</p>
+            <p className="mt-1 text-sm text-stone-500">Manjha retailers, clubs and Uttarayan resellers get wholesale rates above 20 reels. WhatsApp us with your city + quantity.</p>
             <button onClick={() => toast("Wholesale enquiry noted! We'll call you back.")} className="btn-ghost mt-3 w-full">Request Wholesale Rates</button>
           </div>
         </div>

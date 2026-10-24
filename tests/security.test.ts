@@ -95,7 +95,7 @@ test('negative/fractional/duplicate cart quantities are rejected before contacti
   expect((await checkout.POST(request('/api/payment/create', { items: [{ id: customer.id, qty: 1 }, { id: customer.id, qty: 1 }], address }, customer))).status).toBe(400);
 });
 test('identical checkout requests reuse one order and a changed address gets a separate order', async () => {
-  const [product] = await database.db.insert(schema.products).values({ name: 'Test kite', slug: 'audit-kite', sku: 'AUDIT-KITE', price: 100, stockQuantity: 10 }).returning();
+  const [product] = await database.db.insert(schema.products).values({ name: 'Test manjha', slug: 'audit-manjha', sku: 'AUDIT-MANJHA', price: 100, stockQuantity: 10 }).returning();
   let created = 0;
   vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create: async (data: { amount: number }) => ({ ...data, id: 'order_audit_' + ++created, currency: 'INR' }) } } as any);
   const address = { name: 'Customer', phone: customer.phone, addressLine: 'Test street', city: 'Bareilly', state: 'UP', pincode: '243001' };
@@ -106,7 +106,7 @@ test('identical checkout requests reuse one order and a changed address gets a s
   expect(created).toBe(2);
 });
 test('captured payment finalization is idempotent and validates amount', async () => {
-  const [product] = await database.db.insert(schema.products).values({ name: 'Paid kite', slug: 'paid-kite', sku: 'PAID-KITE', price: 100, stockQuantity: 10 }).returning();
+  const [product] = await database.db.insert(schema.products).values({ name: 'Paid manjha', slug: 'paid-manjha', sku: 'PAID-MANJHA', price: 100, stockQuantity: 10 }).returning();
   const [order] = await database.db.insert(schema.orders).values({ userId: customer.id, orderNumber: 'AUDIT-PAID', subtotal: 200, total: 200, razorpayOrderId: 'order_paid_audit', cartSnapshot: [{ id: product.id, qty: 2, price: 100, name: product.name } as any] }).returning();
   const confirmed = { orderId: 'order_paid_audit', paymentId: 'pay_audit', amount: 20000, currency: 'INR', userId: customer.id };
   await expect(finalizePayment({ ...confirmed, amount: 1 })).rejects.toMatchObject({ status: 400 });

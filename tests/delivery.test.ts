@@ -162,7 +162,7 @@ describe('Real PostgreSQL delivery workflow', () => {
     expect(response.status).toBe(429);
   });
   test('product management, checkout validation and payment verification retain working behavior', async () => {
-    const product = await adminApi.POST(request(admin, '/api/admin', { res: 'product', data: { name: 'Regression kite', price: 100, sku: 'REG-KITE', stockQuantity: 10, active: true } })); expect(product.status).toBe(200);
+    const product = await adminApi.POST(request(admin, '/api/admin', { res: 'product', data: { name: 'Regression manjha', price: 100, sku: 'REG-MANJHA', stockQuantity: 10, active: true } })); expect(product.status).toBe(200);
     expect((await (await productsApi.GET(request(null, '/api/products?q=Regression'))).json()).products.length).toBe(1);
     expect((await createPayment.POST(request(customer, '/api/payment/create', { items: [] }))).status).toBe(400);
     const [pending] = await database.db.insert(schema.orders).values({ userId: customer.id, orderNumber: 'TEST-PAY', subtotal: 100, total: 100, razorpayOrderId: 'order_test_123', cartSnapshot: [] }).returning();
