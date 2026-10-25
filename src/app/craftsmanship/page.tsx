@@ -1,6 +1,6 @@
 import { BrandedLink as Link } from "@/components/loading";
 import { ArrowRight, AtSign } from "lucide-react";
-import { HERO_VIDEO_2, INSTAGRAM_URL, WORKSHOP_IMAGES } from "@/lib/data";
+import { INSTAGRAM_URL, WORKSHOP_IMAGES } from "@/lib/data";
 import { SafeImg } from "@/components/site";
 
 const STEPS = [
@@ -13,13 +13,16 @@ const STEPS = [
 export default function Craft() {
   return (
     <div>
-      <section className="relative flex min-h-[70vh] items-end overflow-hidden bg-[#170c07]">
-        <video autoPlay muted loop playsInline poster={WORKSHOP_IMAGES[3]} className="absolute inset-0 h-full w-full object-cover opacity-80"><source src={HERO_VIDEO_2} type="video/mp4" /></video>
-        <div className="absolute inset-0 bg-gradient-to-t from-[#170c07] via-[#170c07]/40 to-transparent" />
-        <div className="relative mx-auto w-full max-w-7xl px-4 pb-14 pt-28 sm:px-6">
+      <section className="bg-gradient-to-br from-[#170c07] via-[#24130c] to-[#170c07]">
+        <div className="mx-auto grid w-full max-w-7xl items-center gap-10 px-4 py-12 sm:px-6 lg:min-h-[70vh] lg:grid-cols-[1.15fr_0.85fr] lg:gap-16 lg:py-14">
+          <div>
           <p className="text-[12px] font-bold uppercase tracking-[0.3em] text-[#c9a24b]">VPB Craftsmanship</p>
           <h1 className="mt-2 max-w-3xl font-serif text-[clamp(2rem,5.5vw,3.8rem)] font-black leading-tight text-[#fdf6e7]">Manjha-making is a ritual.<br />We never rush rituals.</h1>
           <p className="mt-3 max-w-xl text-[#e9d5ae]">From @verai_patang_bhandar — real karigars, real paste, real Bareilly mornings.</p>
+          </div>
+          <div className="mx-auto aspect-[9/16] w-full max-w-[340px] overflow-hidden rounded-[24px] border border-[#c9a24b]/25 bg-black shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
+            <video autoPlay muted loop playsInline width={1080} height={1920} aria-label="VPB craftsmen making Bareilly manjha" poster={WORKSHOP_IMAGES[3]} className="h-full w-full object-contain"><source src="/videos/craftsmanship.mp4" type="video/mp4" /></video>
+          </div>
         </div>
       </section>
       <div className="mx-auto max-w-7xl space-y-16 px-4 py-14 sm:px-6">
