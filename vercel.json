@@ -1,5 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "images": {
+    "sizes": [640],
+    "localPatterns": [],
+    "remotePatterns": [],
+    "dangerouslyAllowSVG": false
+  },
   "crons": [
     { "path": "/api/internal/whatsapp", "schedule": "0 3 * * *" }
   ],

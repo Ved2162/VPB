@@ -64,7 +64,11 @@ test('production headers, secure cookies and disabled unused image proxy are enf
   expect(response.headers()['x-content-type-options']).toBe('nosniff');
   expect(response.headers()['content-security-policy']).toContain("object-src 'none'");
   expect((await request.get('/.env')).status()).toBe(404);
-  expect([400,404]).toContain((await request.get('/_next/image?url=%2Fimages%2Fmanjha%2Fm01.png&w=640&q=75')).status());
+  for (const source of ['/images/manjha/m01.png', 'https://images.pexels.com/photos/1/example.jpg', 'https://example.com/image.png']) {
+    const optimizerURL = '/_next/image?' + new URLSearchParams({ url: source, w: '640', q: '75' });
+    expect([400, 404]).toContain((await request.get(optimizerURL)).status());
+    expect([400, 404]).toContain((await request.head(optimizerURL)).status());
+  }
   const originalImage = await request.get('/images/manjha/m01.png');
   expect(originalImage.status()).toBe(200);
   expect(originalImage.headers()['content-type']).toContain('image/');
