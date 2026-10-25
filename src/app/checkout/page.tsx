@@ -44,7 +44,7 @@ export default function CheckoutPage() {
   const [err, setErr] = useState("");
 
   const discount = subtotal >= 6000 ? 200 : 0;
-  const ship = subtotal === 0 ? 0 : subtotal - discount >= 6000 ? 0 : 99;
+  const ship = 0;
   const total = subtotal - discount + ship;
 
   // OTP cooldown timer

@@ -47,9 +47,9 @@ test('a captured payment on stock hold is not presented as a confirmed order', a
   });
   // All gateway responses are local test doubles. Real credentials are disabled.
   await page.route('https://checkout.razorpay.com/**', route => route.abort());
-  await page.route('**/api/payment/create', route => route.fulfill({ json: { ok: true, keyId: 'rzp_test_fixture', order: { id: 'order_hold', amount: 19900, currency: 'INR' } } }));
+  await page.route('**/api/payment/create', route => route.fulfill({ json: { ok: true, keyId: 'rzp_test_fixture', order: { id: 'order_hold', amount: 10000, currency: 'INR' } } }));
   await page.route('**/api/payment/verify', route => route.fulfill({ json: { ok: true, orderId: '10000000-0000-4000-8000-000000000001' } }));
-  await page.route('**/api/orders/10000000-0000-4000-8000-000000000001', route => route.fulfill({ json: { ok: true, order: { id: '10000000-0000-4000-8000-000000000001', orderNumber: 'FIXTURE-HOLD', total: 199, paymentMethod: 'razorpay', paymentStatus: 'paid', orderStatus: 'placed', fulfillmentPending: true } } }));
+  await page.route('**/api/orders/10000000-0000-4000-8000-000000000001', route => route.fulfill({ json: { ok: true, order: { id: '10000000-0000-4000-8000-000000000001', orderNumber: 'FIXTURE-HOLD', total: 100, paymentMethod: 'razorpay', paymentStatus: 'paid', orderStatus: 'placed', fulfillmentPending: true } } }));
   await page.goto('/checkout');
   await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
   await page.getByRole('button', { name: /^Pay / }).click();

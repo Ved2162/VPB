@@ -151,7 +151,7 @@ test('expired reservations release stock and a late capture cannot take another 
   const first = await (await checkout.POST(request('/api/payment/create', a, body(a)))).json();
   await database.db.update(schema.inventoryReservations).set({ expiresAt: new Date(0) }).where(eq(schema.inventoryReservations.productId, p.id));
   expect((await checkout.POST(request('/api/payment/create', b, body(b)))).status).toBe(200);
-  const settled = await finalizePayment({ orderId: first.order.id, paymentId: 'pay_expired', amount: 19900, currency: 'INR' });
+  const settled = await finalizePayment({ orderId: first.order.id, paymentId: 'pay_expired', amount: 10000, currency: 'INR' });
   expect(settled.order).toMatchObject({ paymentStatus: 'paid', orderStatus: 'placed' });
   expect(settled.order.paymentData?.stockReviewRequired).toBe(true);
   expect((await database.db.select().from(schema.products).where(eq(schema.products.id, p.id)))[0].stockQuantity).toBe(1);

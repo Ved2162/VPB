@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     }
 
     const discount = subtotal >= 6000 ? 200 : 0;
-    const shipping = subtotal - discount >= 6000 ? 0 : 99;
+    const shipping = 0;
     const total = subtotal - discount + shipping;
 
     // Check for an existing pending order for this cart (de-duplicate refreshes/retries)

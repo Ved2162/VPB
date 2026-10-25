@@ -15,7 +15,7 @@ export default function CartPage() {
   const recs = recommendations.data?.products || [];
   if (!ready) return <SectionLoader label="Preparing your cart…" />;
   const discount = subtotal >= 6000 ? 200 : 0;
-  const ship = subtotal === 0 ? 0 : subtotal - discount >= 6000 ? 0 : 99;
+  const ship = 0;
 
   if (lines.length === 0)
     return (
@@ -59,7 +59,8 @@ export default function CartPage() {
             <div className="flex justify-between"><span className="text-stone-500">Subtotal</span><b>{money(subtotal)}</b></div>
             <div className="flex justify-between"><span className="text-stone-500">Discount {discount ? "(₹200 OFF)" : ""}</span><b className="text-green-700">-{money(discount)}</b></div>
             <div className="flex justify-between"><span className="text-stone-500">Shipping</span><b>{ship === 0 ? "FREE" : money(ship)}</b></div>
-            {subtotal < 6000 && <p className="rounded-xl bg-[#fff4de] px-3 py-2 text-xs font-semibold text-[#7a5b1e]">Add {money(6000 - subtotal)} more for FREE shipping + ₹200 OFF</p>}
+            <p className="rounded-xl bg-[#fff4de] px-3 py-2 text-xs font-semibold text-[#7a5b1e]">FREE shipping on every order — no minimum spend.</p>
+            {subtotal < 6000 && <p className="text-xs font-semibold text-[#7a5b1e]">Add {money(6000 - subtotal)} more for ₹200 OFF</p>}
             <div className="flex justify-between border-t border-dashed border-[#e7d6b8] pt-3 font-serif text-xl font-black"><span>Total</span><span className="text-[#7a1f1f]">{money(subtotal - discount + ship)}</span></div>
           </div>
           <Link href="/checkout" className="btn-primary mt-5 w-full !py-3.5">Proceed to Checkout <ArrowRight size={16} /></Link>

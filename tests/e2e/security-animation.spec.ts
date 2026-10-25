@@ -52,7 +52,7 @@ test('pending payment confirmation retries the same receipt without creating ano
   await page.route('https://checkout.razorpay.com/**', route => route.abort());
   let created = 0, verified = 0;
   // Test doubles model the external gateway and delayed confirmation; no live charge is possible.
-  await page.route('**/api/payment/create', route => { created++; return route.fulfill({ json: { ok: true, keyId: 'rzp_test_fixture', order: { id: 'order_receipt', amount: 19900, currency: 'INR' } } }); });
+  await page.route('**/api/payment/create', route => { created++; return route.fulfill({ json: { ok: true, keyId: 'rzp_test_fixture', order: { id: 'order_receipt', amount: 10000, currency: 'INR' } } }); });
   await page.route('**/api/payment/verify', route => {
     verified++;
     expect(route.request().postDataJSON().razorpay_order_id).toBe('order_receipt');

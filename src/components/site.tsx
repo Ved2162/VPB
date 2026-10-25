@@ -56,7 +56,7 @@ export function Navbar() {
   return (
     <>
       <div className="bg-[#1c0f0a] text-center text-[12px] font-medium tracking-wide text-[#f0d9a8]">
-        <p className="mx-auto max-w-6xl px-4 py-2">100% Pure Cotton Bareilly Manjha &nbsp;•&nbsp; Flat ₹200 OFF above ₹6000 &nbsp;•&nbsp; Ships across India in 4–6 days</p>
+        <p className="mx-auto max-w-6xl px-4 py-2">FREE shipping on every order across India &nbsp;•&nbsp; Flat ₹200 OFF above ₹6000 &nbsp;•&nbsp; Delivery in 4–6 days</p>
       </div>
       <header className={`sticky top-0 z-[80] transition-all duration-300 ${scrolled ? "bg-[#fffaf0]/92 shadow-[0_10px_30px_rgba(43,20,13,.12)] backdrop-blur-xl" : "bg-[#fffaf0]"}`}>
         <div className={`mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 transition-all sm:px-6 ${scrolled ? "py-2.5" : "py-4"}`}>
@@ -100,7 +100,8 @@ export function Navbar() {
 
 export function CartDrawer() {
   const { lines, open, setOpen, setQty, remove, subtotal } = useCart();
-  const ship = subtotal >= 6000 ? 0 : subtotal === 0 ? 0 : 99;
+  const discount = subtotal >= 6000 ? 200 : 0;
+  const ship = 0;
   return (
     <>
       <div onClick={() => setOpen(false)} className={`fixed inset-0 z-[90] bg-black/45 backdrop-blur-[2px] transition-opacity duration-300 ${open ? "opacity-100" : "pointer-events-none opacity-0"}`} />
@@ -140,7 +141,8 @@ export function CartDrawer() {
           <div className="border-t border-[#efe0c3] bg-white px-5 py-4">
             <div className="flex justify-between text-sm"><span className="text-stone-500">Subtotal</span><span className="font-bold">{money(subtotal)}</span></div>
             <div className="flex justify-between text-sm"><span className="text-stone-500">Shipping</span><span className="font-bold">{ship === 0 ? "FREE" : money(ship)}</span></div>
-            <div className="mt-1 flex justify-between border-t border-dashed border-[#e7d6b8] pt-2 font-serif text-lg font-bold"><span>Total</span><span className="text-[#7a1f1f]">{money(subtotal + ship)}</span></div>
+            {discount > 0 && <div className="flex justify-between text-sm"><span className="text-stone-500">Discount</span><span className="font-bold">−{money(discount)}</span></div>}
+            <div className="mt-1 flex justify-between border-t border-dashed border-[#e7d6b8] pt-2 font-serif text-lg font-bold"><span>Total</span><span className="text-[#7a1f1f]">{money(subtotal - discount + ship)}</span></div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <Link href="/cart" onClick={() => setOpen(false)} className="btn-ghost text-center">View Cart</Link>
               <Link href="/checkout" onClick={() => setOpen(false)} className="btn-primary text-center">Checkout</Link>
@@ -288,7 +290,7 @@ export function RevealInit() {
 }
 
 export function TrustBar() {
-  const items = [[Truck, "Pan-India Shipping", "4–6 working days"], [ShieldCheck, "100% Genuine VPB", "Pure cotton manjha"], [BadgeCheck, "Quality Tested", "Every reel checked"], [Phone, "WhatsApp Support", PHONE_DISPLAY]];
+  const items = [[Truck, "FREE Pan-India Shipping", "Every order · 4–6 working days"], [ShieldCheck, "100% Genuine VPB", "Pure cotton manjha"], [BadgeCheck, "Quality Tested", "Every reel checked"], [Phone, "WhatsApp Support", PHONE_DISPLAY]];
   return (
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       {items.map(([Icon, t, s]: any) => (

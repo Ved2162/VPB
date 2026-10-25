@@ -105,6 +105,28 @@ test('identical checkout requests reuse one order and a changed address gets a s
   expect((await checkout.POST(request('/api/payment/create', { ...body, address: { ...address, addressLine: 'Different street' } }, customer))).status).toBe(200);
   expect(created).toBe(2);
 });
+test.each([100, 5999, 6000, 6200])('checkout charges no shipping at a subtotal of %i and keeps the existing discount', async (price) => {
+  const [buyer] = await database.db.insert(schema.users).values({ name: 'Shipping fixture', phone: '950000' + String(price).padStart(4, '0'), passwordHash: 'test-only', role: 'customer' }).returning();
+  const [product] = await database.db.insert(schema.products).values({ name: 'Free shipping fixture', slug: 'free-shipping-' + price, sku: 'FREE-SHIP-' + price, price, stockQuantity: 10 }).returning();
+  const create = vi.fn(async (data: { amount: number }) => ({ ...data, id: 'order_free_shipping_' + price, currency: 'INR' }));
+  vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create } } as never);
+  const address = { name: 'Customer', phone: customer.phone, addressLine: 'Test street', city: 'Bareilly', state: 'UP', pincode: '243001' };
+  const response = await checkout.POST(request('/api/payment/create', { items: [{ id: product.id, qty: 1 }], address, shippingCharge: 99, total: 1 }, buyer));
+  expect(response.status).toBe(200);
+  const discount = price >= 6000 ? 200 : 0;
+  const result = await response.json();
+  expect(result.order.amount).toBe((price - discount) * 100);
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ amount: (price - discount) * 100 }));
+  const [order] = await database.db.select().from(schema.orders).where(eq(schema.orders.razorpayOrderId, result.order.id));
+  expect(order).toMatchObject({ subtotal: price, shippingCharge: 0, discount, total: price - discount });
+});
+
+test('pincode delivery quotes have free shipping and still reject invalid pincodes', async () => {
+  const valid = await extra.POST(request('/api/extra', { res: 'pincode', pincode: '243001' }));
+  expect(await valid.json()).toMatchObject({ ok: true, charge: 0 });
+  expect((await extra.POST(request('/api/extra', { res: 'pincode', pincode: '123' }))).status).toBe(400);
+});
+
 test('captured payment finalization is idempotent and validates amount', async () => {
   const [product] = await database.db.insert(schema.products).values({ name: 'Paid manjha', slug: 'paid-manjha', sku: 'PAID-MANJHA', price: 100, stockQuantity: 10 }).returning();
   const [order] = await database.db.insert(schema.orders).values({ userId: customer.id, orderNumber: 'AUDIT-PAID', subtotal: 200, total: 200, razorpayOrderId: 'order_paid_audit', cartSnapshot: [{ id: product.id, qty: 2, price: 100, name: product.name } as any] }).returning();

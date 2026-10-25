@@ -65,7 +65,7 @@ export default async function Home() {
         <div className="marquee text-[13px] font-bold uppercase tracking-[0.2em]">
           {[0, 1].map((k) => (
             <span key={k} className="flex shrink-0 items-center">
-              {["VAYUSHASTRA Sankal 8", "VAYUSHASTRA PANDA 5", "THE ROCK BREAKER, Sankal 8", "THE ROCK BREAKER, PANDA 5", "Pan-India Shipping", "Tournament Grade"].map((t) => (
+              {["VAYUSHASTRA Sankal 8", "VAYUSHASTRA PANDA 5", "THE ROCK BREAKER, Sankal 8", "THE ROCK BREAKER, PANDA 5", "FREE Pan-India Shipping", "Tournament Grade"].map((t) => (
                 <span key={t + k} className="mx-6 flex items-center gap-6">{t} <span className="text-[#c9a24b]">✦</span></span>
               ))}
             </span>
@@ -157,7 +157,7 @@ export default async function Home() {
         <section className="rounded-[26px] border border-[#ecdcb9] bg-white p-6 sm:p-10">
           <SectionHead kicker="Why VPB" title="Why Flyers Choose VPB" />
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {[[ShieldCheck, "Pure Cotton Only", "No nylon mix. Lab-consistent cotton base on every reel."], [BadgeCheck, "Tested Every 500m", "Tension, coating and sharpness checked before packing."], [Truck, "Fast, Safe Shipping", "Vacuum-packed reels, shipped in 24h, delivered in 4–6 days."], [Quote, "WhatsApp Support", "Questions about your order? Reach us on WhatsApp anytime — +91 90811 11697."]].map(([Icon, t, s]: any) => (
+            {[[ShieldCheck, "Pure Cotton Only", "No nylon mix. Lab-consistent cotton base on every reel."], [BadgeCheck, "Tested Every 500m", "Tension, coating and sharpness checked before packing."], [Truck, "Free, Safe Shipping", "Vacuum-packed reels, shipped in 24h, delivered in 4–6 days."], [Quote, "WhatsApp Support", "Questions about your order? Reach us on WhatsApp anytime — +91 90811 11697."]].map(([Icon, t, s]: any) => (
               <div key={t} className="reveal rounded-2xl bg-[#fffaf0] p-6 text-center ring-1 ring-[#ecdcb9]">
                 <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-[#7a1f1f] text-[#f5d67b]"><Icon size={20} /></span>
                 <p className="mt-3 font-serif text-lg font-bold">{t}</p><p className="mt-1 text-sm text-stone-500">{s}</p>
@@ -196,7 +196,7 @@ export default async function Home() {
             <ul className="mt-3 space-y-2 text-sm text-stone-600">
               <li>• Dispatched in 24 hours, vacuum-packed</li>
               <li>• 4–6 working days across India</li>
-              <li>• FREE shipping above ₹6000 • Flat ₹200 OFF above ₹6000</li>
+              <li>• FREE shipping on every order • Flat ₹200 OFF above ₹6000</li>
               <li>• Live tracking with courier + tracking number</li>
             </ul>
             <Link href="/shop" className="btn-ghost mt-5 !text-[13px]">Start Shopping</Link>

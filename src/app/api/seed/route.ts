@@ -81,7 +81,7 @@ export async function POST(req: Request) {
     for (const p of prodDefs) {
       const slug = slugify(p.name);
       const ex = await db.select().from(products).where(or(eq(products.sku, p.sku), eq(products.slug, slug)));
-      const highlights = ["100% pure cotton base", `${p.cord ? p.cord + " cord Bareilly manjha" : "Hand-crafted in Bareilly"}`, "Authentic Bareilly manjha paste, tested every 500m", "Pan-India shipping in 4–6 days"];
+      const highlights = ["100% pure cotton base", `${p.cord ? p.cord + " cord Bareilly manjha" : "Hand-crafted in Bareilly"}`, "Authentic Bareilly manjha paste, tested every 500m", "Free Pan-India shipping in 4–6 days"];
       const specs = { Brand: p.brand, "Cord Count": String(p.cord || "—"), Reel: p.reel, SKU: p.sku, Base: "100% Pure Cotton", Origin: "Bareilly, UP" };
       // Setup must never overwrite edits made in the admin panel.
       if (ex.length) continue;
@@ -110,13 +110,13 @@ export async function POST(req: Request) {
     if (!bEx.length) {
       await db.insert(banners).values([
         { title: "Uttarayan Collection Live", subtitle: "Adnan • Black Panther • Nawab — tournament reels restocked", image: "/images/manjha/m09.png", link: "/shop", active: true, sortOrder: 0 },
-        { title: "Flat ₹200 OFF above ₹6000", subtitle: "Auto-applied at checkout. Pan-India shipping.", image: "/images/manjha/m04.png", link: "/shop", active: true, sortOrder: 1 },
+        { title: "Flat ₹200 OFF above ₹6000", subtitle: "Auto-applied at checkout. FREE shipping on every order.", image: "/images/manjha/m04.png", link: "/shop", active: true, sortOrder: 1 },
       ]);
     }
     const cEx = await db.select().from(siteContent);
     if (!cEx.length) {
       await db.insert(siteContent).values([
-        { key: "announcement", value: "Get Flat ₹200 OFF on orders above ₹6000 — 100% Pure Cotton Bareilly Manjha" },
+        { key: "announcement", value: "FREE shipping on every order — Flat ₹200 OFF on orders above ₹6000" },
         { key: "brand_story", value: "Verai Patang Bhandar (VPB) — Bareilly's trusted manjha house. Three generations of karigars, one promise: honest, sharp, pure-cotton manjha." },
       ]);
     }
