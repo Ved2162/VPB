@@ -1,4 +1,5 @@
 // Disposable local database: never reads .env and never connects to the live database.
+// --payu-sandbox opts into real TEST PayU traffic using an ignored local file.
 import { PGlite } from '@electric-sql/pglite';
 import { PGLiteSocketServer } from '@electric-sql/pglite-socket';
 import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
@@ -59,6 +60,14 @@ process.env.NEXT_OUTPUT_DIR = '.next';
 process.env.PAYU_ENABLED = 'false';
 process.env.PAYU_MERCHANT_KEY = '';
 process.env.PAYU_MERCHANT_SALT = '';
+if (process.argv.includes('--payu-sandbox')) {
+  const { parse } = await import('dotenv');
+  const sandbox = parse(await readFile(new URL('../.env.payu-sandbox.local', import.meta.url), 'utf8'));
+  if (!sandbox.PAYU_MERCHANT_KEY?.trim() || !sandbox.PAYU_MERCHANT_SALT?.trim()) throw new Error('Sandbox credentials required');
+  Object.assign(process.env, { PAYU_ENABLED: 'true', PAYU_ENV: 'test', PAYU_CURRENCY: 'INR',
+    PAYU_BASE_URL: 'http://127.0.0.1:3100', PAYU_MERCHANT_KEY: sandbox.PAYU_MERCHANT_KEY.trim(),
+    PAYU_MERCHANT_SALT: sandbox.PAYU_MERCHANT_SALT.trim() });
+}
 process.env.RENFLAIR_API_KEY = '';
 process.env.MSG91_WHATSAPP_ENABLED = 'false';
 process.env.MSG91_AUTH_KEY = '';

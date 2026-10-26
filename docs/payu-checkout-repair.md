@@ -1,5 +1,7 @@
 # PayU checkout repair — 26 October 2026
 
+Subsequent merchant-authorized testing switched the public Vercel target to PayU Test Mode and identified the real sandbox redirect host. See [sandbox validation](payu-sandbox-validation.md) for the current deployed mode, actual sandbox results and remaining Live checks. The original incident analysis below describes the investigation before that switch.
+
 Implemented and tested locally. **Deployment and fresh authoritative PayU reconciliation remain outstanding.** The user subsequently supplied order VPB-202610-703439 and www.vpbbarelimacker.com. Read-only queries against the configured database located the order and related attempts, and public HTTP headers confirmed the old CSP remains deployed. No Live PayU credentials, merchant dashboard session or screenshot transaction ID were available. No production configuration, database records, charges or refunds were changed.
 
 ## Verified findings and limits

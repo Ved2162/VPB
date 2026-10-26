@@ -1,11 +1,17 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type BrowserContext } from '@playwright/test';
 
 const orderId = '10000000-0000-4000-8000-000000000001';
+let customerCookies: Awaited<ReturnType<BrowserContext['cookies']>> = [];
+
+test.beforeAll(async ({ request }) => {
+  const login = await request.post('/api/auth', { data: { action: 'login', phone: '9000000120', password: 'E2e-only-password-2026' } });
+  expect(login.ok()).toBe(true);
+  customerCookies = (await request.storageState()).cookies;
+});
 test.beforeEach(async ({ page, context }) => {
   // Every provider request must be explicitly mocked by its test.
-  await page.route(/^https:\/\/(?:secure|test|api)\.payu\.in\//, route => route.abort());
-  const login = await context.request.post('/api/auth', { data: { action: 'login', phone: '9000000120', password: 'E2e-only-password-2026' } });
-  expect(login.ok()).toBe(true);
+  await page.route(/^https:\/\/(?:secure|test|api|apitest)\.payu\.in\//, route => route.abort());
+  await context.addCookies(customerCookies);
   await page.route('**/api/orders/' + orderId, route => route.fulfill({ json: { ok: true, order: { id: orderId, orderNumber: 'PAYU-BROWSER-FIXTURE', total: 100, subtotal: 100, discount: 0, shippingCharge: 0, paymentMethod: 'payu', paymentStatus: 'paid', orderStatus: 'confirmed' } } }));
   await page.addInitScript(() => {
     localStorage.setItem('vpb_cart', JSON.stringify([{ id: '20000000-0000-4000-8000-000000000001', slug: 'loader-test-manjha', name: 'Loader test manjha', price: 100, image: '/images/manjha/m01.png', qty: 1, stock: 25 }]));
@@ -47,6 +53,21 @@ test('Live hosted POST can follow the PayU checkout redirect under the actual CS
   await page.goto('/checkout');
   await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Live hosted checkout fixture', exact: true })).toBeVisible();
+});
+
+test('sandbox hosted POST follows the observed redirect to apitest.payu.in', async ({ page }) => {
+  await page.route('**/api/payment/create', route => route.fulfill({ json: { ok: true, orderId,
+    action: 'https://test.payu.in/_payment', fields: { txnid: '9'.repeat(24), amount: '100.00' } } }));
+  await page.route('https://test.payu.in/_payment', async route => {
+    expect(route.request().method()).toBe('POST');
+    await route.fulfill({ status: 302, headers: { location: 'https://apitest.payu.in/public/checkout-fixture' }, body: '' });
+  });
+  await page.route('https://apitest.payu.in/public/checkout-fixture', route => route.fulfill({
+    contentType: 'text/html', body: '<h1>Sandbox hosted checkout fixture</h1>',
+  }));
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Sandbox hosted checkout fixture', exact: true })).toBeVisible();
 });
 
 test('blocked form navigation explains recovery and repeated clicks never create a second payment', async ({ page }) => {
