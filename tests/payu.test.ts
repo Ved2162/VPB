@@ -61,6 +61,72 @@ function postCallback(fields: Record<string, string>, path = '/api/payment/payu/
 }
 async function saved(f: Fixture) { return (await database.db.select().from(schema.orders).where(eq(schema.orders.id, f.checkout.orderId)))[0]; }
 
+function configureLiveFixture() {
+  process.env.PAYU_ENV = 'production';
+  process.env.PAYU_BASE_URL = 'https://shop.example.com';
+  process.env.PAYU_MERCHANT_KEY = 'isolated-live-merchant-key';
+  process.env.PAYU_MERCHANT_SALT = 'isolated-live-merchant-salt';
+}
+
+test.each(['pending', 'failed', 'paid'])('retired sandbox %s receipt/request is recoverable without verifying it against Live or changing its history', async status => {
+  const f = await fixture();
+  await database.db.update(schema.orders).set({ paymentStatus: status }).where(eq(schema.orders.id, f.checkout.orderId));
+  await database.db.update(schema.payuAttempts).set({ status }).where(eq(schema.payuAttempts.txnId, f.checkout.fields.txnid));
+  const before = await saved(f);
+  configureLiveFixture();
+  const fetcher = vi.fn(async () => { throw new Error('Old sandbox ID must not reach Live PayU'); });
+  vi.stubGlobal('fetch', fetcher);
+  for (const response of [
+    await verify.POST(request('/api/payment/payu/verify', { orderId: f.checkout.orderId }, f.user)),
+    await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId }, f.user)),
+    await create.POST(request('/api/payment/create', f.body, f.user)),
+  ]) {
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({ ok: false, code: 'PAYU_TEST_CHECKOUT_ENDED', orderId: f.checkout.orderId });
+  }
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(await saved(f)).toEqual(before);
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(1);
+});
+
+test('fresh concurrent Live checkout ignores a matching sandbox attempt and transfers only its temporary stock hold', async () => {
+  const f = await fixture();
+  await database.db.update(schema.products).set({ stockQuantity: 1 }).where(eq(schema.products.id, f.product.id));
+  const before = await saved(f);
+  configureLiveFixture();
+  const body = { ...f.body, idempotencyKey: crypto.randomUUID() };
+  const responses = await Promise.all([create.POST(request('/api/payment/create', body, f.user)), create.POST(request('/api/payment/create', body, f.user))]);
+  for (const response of responses) expect(response.status).toBe(200);
+  const [live, duplicate] = await Promise.all(responses.map(response => response.json()));
+  expect(live.orderId).not.toBe(f.checkout.orderId);
+  expect(live.action).toBe('https://secure.payu.in/_payment');
+  expect(live.fields.amount).toBe('100.00');
+  expect(live.fields.txnid).not.toBe(f.checkout.fields.txnid);
+  expect(duplicate.orderId).toBe(live.orderId);
+  expect(duplicate.fields.txnid).toBe(live.fields.txnid);
+  expect(await saved(f)).toEqual(before);
+  expect(await database.db.select().from(schema.inventoryReservations).where(eq(schema.inventoryReservations.orderId, f.checkout.orderId))).toHaveLength(0);
+  expect(await database.db.select().from(schema.inventoryReservations).where(eq(schema.inventoryReservations.orderId, live.orderId))).toHaveLength(1);
+  expect(await database.db.select().from(schema.orders).where(eq(schema.orders.userId, f.user.id))).toHaveLength(2);
+  expect((await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.txnId, f.checkout.fields.txnid)))[0]).toMatchObject({ environment: 'test', status: 'pending' });
+});
+
+test('a mismatched Live merchant remains blocked and cannot use sandbox recovery to bypass uncertain payment', async () => {
+  const f = await fixture();
+  await database.db.update(schema.payuAttempts).set({ environment: 'production', merchantKey: 'isolated-old-live-key' }).where(eq(schema.payuAttempts.txnId, f.checkout.fields.txnid));
+  configureLiveFixture();
+  for (const response of [
+    await verify.POST(request('/api/payment/payu/verify', { orderId: f.checkout.orderId }, f.user)),
+    await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId }, f.user)),
+    await create.POST(request('/api/payment/create', { ...f.body, idempotencyKey: crypto.randomUUID() }, f.user)),
+  ]) {
+    expect(response.status).toBe(409);
+    expect(await response.json()).not.toHaveProperty('code', 'PAYU_TEST_CHECKOUT_ENDED');
+  }
+  expect(await database.db.select().from(schema.orders).where(eq(schema.orders.userId, f.user.id))).toHaveLength(1);
+  expect((await saved(f)).paymentStatus).toBe('pending');
+});
+
 test('documented hash ordering, additional charges, malformed hashes and exact decimal amounts', () => {
   const p = { key: 'k', txnid: 't', amount: '1.00', productinfo: 'p', firstname: 'f', email: 'e' };
   expect(requestHash(p, 's')).toBe(sha512('k|t|1.00|p|f|e|||||||||||s'));

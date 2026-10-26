@@ -116,6 +116,17 @@ export default function CheckoutPage() {
     } catch (error) { toast(error instanceof Error ? error.message : 'Unable to save delivery contact'); }
   };
 
+  const recoverRetiredTestCheckout = (result: { code?: string; error?: string }) => {
+    if (result.code !== 'PAYU_TEST_CHECKOUT_ENDED') return false;
+    sessionStorage.removeItem('vpb-payu-order');
+    sessionStorage.removeItem('vpb-checkout-request');
+    window.history.replaceState(null, '', '/checkout');
+    setPendingReceipt(null); setOrder(null); setPaymentFailed(false);
+    setVerificationPaused(true); pollCount.current = 0; setStep(3);
+    setErr(result.error || 'The previous test checkout has ended. Continue to PayU to start a Live checkout.');
+    return true;
+  };
+
   const verifyReceipt = async (orderId: string) => {
     if (verificationAction.current) return;
     verificationAction.current = true;
@@ -123,6 +134,7 @@ export default function CheckoutPage() {
     try {
       const response = await apiFetch('/api/payment/payu/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) });
       const confirmation = await response.json();
+      if (recoverRetiredTestCheckout(confirmation)) return;
       if (response.status === 404) { sessionStorage.removeItem('vpb-payu-order'); setPendingReceipt(null); }
       if (!confirmation.ok) throw new Error(confirmation.error || 'Payment verification is pending. Check again shortly.');
       const result = await (await apiFetch('/api/orders/' + orderId)).json();
@@ -186,6 +198,7 @@ export default function CheckoutPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(existingId ? { orderId: existingId } : { items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel, email: deliveryEmail.trim(), idempotencyKey: checkoutRequest.id }) });
       const result = await response.json();
+      if (recoverRetiredTestCheckout(result)) return;
       if (!response.ok || !result.ok) throw new Error(result.error || 'Unable to prepare payment');
       if (result.alreadyPaid || result.needsVerification) { await verifyReceipt(result.orderId); return; }
       if (!['https://test.payu.in/_payment', 'https://secure.payu.in/_payment'].includes(result.action)) throw new Error('Invalid checkout destination');

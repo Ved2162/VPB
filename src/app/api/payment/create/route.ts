@@ -1,13 +1,13 @@
-import { reserveStock } from '@/lib/inventory';
+import { reserveStock, releaseStock } from '@/lib/inventory';
 import { publicProduct } from '@/lib/catalog';
 import { readJson, canonicalJson, isUuid } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, products, users } from "@/db/schema";
+import { orders, products, users, payuAttempts } from "@/db/schema";
 import { and, eq, inArray, or, sql } from "drizzle-orm";
 import { orderNumber } from "@/lib/auth";
 import { payuConfig, paymentEmail } from '@/lib/payu';
-import { preparePayuCheckout } from '@/lib/payu-payments';
+import { preparePayuCheckout, isRetiredSandboxAttempt, retiredSandboxResult } from '@/lib/payu-payments';
 import { sameOrigin, DeliveryError, textField } from '@/lib/shipment-rules';
 import { activeUser, rateLimit, deliveryFailure } from '@/lib/delivery-server';
 import { payuLog } from '@/lib/payu-log';
@@ -38,7 +38,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, error: "Invalid cart contents — please reload and try again" }, { status: 400 });
     }
     if (new Set(ids).size !== ids.length) throw new DeliveryError('Duplicate cart items');
-    payuConfig(true);
+    const config = payuConfig(true);
     if (!isUuid(body.idempotencyKey)) throw new DeliveryError('Invalid checkout request ID');
     return await db.transaction(async tx => {
     const [account] = await tx.select({ active: users.active, email: users.email, role: users.role, sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, me.id)).for('update');
@@ -47,6 +47,9 @@ export async function POST(req: Request) {
     const [previousRequest] = await tx.select().from(orders).where(or(eq(orders.checkoutKey, body.idempotencyKey), and(eq(orders.userId, me.id), sql`coalesce(${orders.paymentData}->'checkoutRequestIds', '[]'::jsonb) @> ${JSON.stringify([body.idempotencyKey])}::jsonb`)));
     if (previousRequest) {
       if (previousRequest.userId !== me.id) throw new DeliveryError('Checkout request is unavailable', 409);
+      const [previousAttempt] = previousRequest.payuTxnId ? await tx.select().from(payuAttempts).where(eq(payuAttempts.txnId, previousRequest.payuTxnId)) : [];
+      if (previousAttempt?.orderId === previousRequest.id && isRetiredSandboxAttempt(previousAttempt.environment, config.environment))
+        return NextResponse.json(retiredSandboxResult(previousRequest.id), { status: 409 });
       if (['paid', 'refunded'].includes(previousRequest.paymentStatus)) return NextResponse.json({ ok: true, alreadyPaid: true, orderId: previousRequest.id });
     }
     const email = paymentEmail(body.email || account.email);
@@ -70,8 +73,19 @@ export async function POST(req: Request) {
     const total = subtotal - discount + shipping;
 
     // Check for an existing pending order for this cart (de-duplicate refreshes/retries)
-    const existing = await tx.select().from(orders).where(and(eq(orders.userId, me.id), inArray(orders.paymentStatus, ['pending', 'failed'])));
-    const reusable = existing.find((o) => !!o.payuTxnId && o.total === total && o.orderStatus === "placed" && canonicalJson(o.cartSnapshot) === canonicalJson(cartSnapshot) && canonicalJson(o.shippingAddress) === canonicalJson({ name: address.name, phone: address.phone, addressLine: address.addressLine, city: address.city, state: address.state, pincode: address.pincode, landmark: address.landmark || "" }));
+    const existingRows = await tx.select({ order: orders, environment: payuAttempts.environment }).from(orders)
+      .leftJoin(payuAttempts, and(eq(orders.payuTxnId, payuAttempts.txnId), eq(orders.id, payuAttempts.orderId)))
+      .where(and(eq(orders.userId, me.id), inArray(orders.paymentStatus, ['pending', 'failed'])));
+    const matchesCart = (o: typeof orders.$inferSelect) => o.total === total && o.orderStatus === 'placed' &&
+      canonicalJson(o.cartSnapshot) === canonicalJson(cartSnapshot) && canonicalJson(o.shippingAddress) === canonicalJson({ name: address.name, phone: address.phone, addressLine: address.addressLine, city: address.city, state: address.state, pincode: address.pincode, landmark: address.landmark || '' });
+    // Sandbox funds cannot pay a Live order. Keep their history, but do not
+    // reuse their IDs or let matching temporary holds block a fresh Live cart.
+    for (const row of existingRows.filter(row => isRetiredSandboxAttempt(row.environment ?? undefined, config.environment) && matchesCart(row.order))) {
+      await tx.select({ id: orders.id }).from(orders).where(eq(orders.id, row.order.id)).for('update');
+      await releaseStock(tx, row.order.id);
+    }
+    const existing = existingRows.filter(row => !isRetiredSandboxAttempt(row.environment ?? undefined, config.environment)).map(row => row.order);
+    const reusable = existing.find(o => !!o.payuTxnId && matchesCart(o));
 
     const legacy = existing.find(o => o.razorpayOrderId && o.total === total && canonicalJson(o.cartSnapshot) === canonicalJson(cartSnapshot));
     if (legacy) throw new DeliveryError('An existing Razorpay checkout needs reconciliation. Contact support.', 409);

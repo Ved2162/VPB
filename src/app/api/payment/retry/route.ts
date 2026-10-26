@@ -3,9 +3,9 @@ import { sameOrigin, DeliveryError } from '@/lib/shipment-rules';
 import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, users } from "@/db/schema";
+import { orders, users, payuAttempts } from "@/db/schema";
 import { eq } from "drizzle-orm";
-import { preparePayuCheckout, reconcilePayu } from '@/lib/payu-payments';
+import { preparePayuCheckout, reconcilePayu, isRetiredSandboxAttempt, retiredSandboxResult } from '@/lib/payu-payments';
 import { payuConfig } from '@/lib/payu';
 import { activeUser, deliveryFailure, rateLimit } from '@/lib/delivery-server';
 import { payuLog } from '@/lib/payu-log';
@@ -23,9 +23,14 @@ export async function POST(req: Request) {
     if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(orderId || "")) {
       return NextResponse.json({ ok: false, error: "Invalid order" }, { status: 400 });
     }
-    payuConfig(true);
+    const config = payuConfig(true);
     const [previous] = await db.select().from(orders).where(eq(orders.id, orderId));
     if (!previous || previous.userId !== me.id) throw new DeliveryError('Order not found', 404);
+    if (previous.payuTxnId) {
+      const [attempt] = await db.select().from(payuAttempts).where(eq(payuAttempts.txnId, previous.payuTxnId));
+      if (attempt?.orderId === previous.id && isRetiredSandboxAttempt(attempt.environment, config.environment))
+        return NextResponse.json(retiredSandboxResult(previous.id), { status: 409 });
+    }
     if (previous.payuTxnId && !['paid', 'refunded'].includes(previous.paymentStatus)) {
       // Unknown/unavailable verification must never produce another attempt.
       await reconcilePayu(previous.payuTxnId);

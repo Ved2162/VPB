@@ -18,6 +18,65 @@ test.beforeEach(async ({ page, context }) => {
   });
 });
 
+test('a restored sandbox checkout clears only its old receipt and opens a fresh Live checkout', async ({ page }) => {
+  const oldRequest = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  await page.addInitScript(({ orderId, oldRequest }) => {
+    sessionStorage.setItem('vpb-payu-order', orderId);
+    sessionStorage.setItem('vpb-checkout-request', JSON.stringify({ id: oldRequest, fingerprint: 'old-test-cart' }));
+  }, { orderId, oldRequest });
+  await page.route('**/api/payment/payu/verify', route => route.fulfill({ status: 409, json: {
+    ok: false, code: 'PAYU_TEST_CHECKOUT_ENDED', orderId,
+    error: 'Your previous checkout was a test payment. Live payments are now enabled. Continue to PayU to start a fresh checkout.',
+  } }));
+  let created = 0;
+  await page.route('**/api/payment/create', async route => {
+    created++;
+    const body = route.request().postDataJSON();
+    expect(body.idempotencyKey).not.toBe(oldRequest);
+    expect(body.items).toEqual([{ id: '20000000-0000-4000-8000-000000000001', qty: 1 }]);
+    expect(body.orderId).toBeUndefined();
+    await route.fulfill({ json: { ok: true, orderId, action: 'https://secure.payu.in/_payment', fields: { txnid: '7'.repeat(24), amount: '100.00' } } });
+  });
+  await page.route('https://secure.payu.in/_payment', route => route.fulfill({ contentType: 'text/html', body: '<h1>Fresh Live checkout</h1>' }));
+  await page.goto('/checkout?paymentOrder=' + orderId);
+  await expect(page.getByText(/Your previous checkout was a test payment/)).toBeVisible();
+  await expect(page).toHaveURL('http://127.0.0.1:3100/checkout');
+  expect(await page.evaluate(() => sessionStorage.getItem('vpb-payu-order'))).toBeNull();
+  expect(await page.evaluate(() => sessionStorage.getItem('vpb-checkout-request'))).toBeNull();
+  await expect(page.getByRole('button', { name: 'Check payment status', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Continue to PayU', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Fresh Live checkout', exact: true })).toBeVisible();
+  expect(created).toBe(1);
+});
+
+test('an old sandbox idempotency response rotates the request without losing the cart', async ({ page }) => {
+  const requests: string[] = [];
+  await page.route('**/api/payment/create', async route => {
+    requests.push(route.request().postDataJSON().idempotencyKey);
+    await route.fulfill(requests.length === 1 ? { status: 409, json: { ok: false, code: 'PAYU_TEST_CHECKOUT_ENDED',
+      error: 'Your previous checkout was a test payment. Continue to PayU to start a fresh checkout.' } }
+      : { json: { ok: true, orderId, action: 'https://secure.payu.in/_payment', fields: { txnid: '8'.repeat(24), amount: '100.00' } } });
+  });
+  await page.route('https://secure.payu.in/_payment', route => route.fulfill({ contentType: 'text/html', body: '<h1>New Live attempt</h1>' }));
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
+  await expect(page.getByText(/Your previous checkout was a test payment/)).toBeVisible();
+  await page.getByRole('button', { name: 'Continue to PayU', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'New Live attempt', exact: true })).toBeVisible();
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).not.toBe(requests[1]);
+});
+
+test('a Live environment mismatch never clears the saved attempt or offers another charge', async ({ page }) => {
+  await page.addInitScript(orderId => sessionStorage.setItem('vpb-payu-order', orderId), orderId);
+  await page.route('**/api/payment/payu/verify', route => route.fulfill({ status: 409, json: { ok: false, error: 'Payment environment mismatch' } }));
+  await page.goto('/checkout?paymentOrder=' + orderId);
+  await expect(page.getByText('Payment environment mismatch', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Check payment status', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Continue to PayU', exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => sessionStorage.getItem('vpb-payu-order'))).toBe(orderId);
+});
+
 test('hosted checkout form posts to PayU and returns to server-verified order; refresh is safe', async ({ page }) => {
   // Browser transport fixtures only. No network request reaches a payment provider.
   let posted = '';

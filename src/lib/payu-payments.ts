@@ -13,6 +13,15 @@ import { payuLog } from './payu-log';
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Order = typeof orders.$inferSelect;
 
+export function isRetiredSandboxAttempt(environment: string | undefined, currentEnvironment: string) {
+  return environment === 'test' && currentEnvironment === 'production';
+}
+
+export function retiredSandboxResult(orderId: string) {
+  return { ok: false, code: 'PAYU_TEST_CHECKOUT_ENDED', orderId,
+    error: 'Your previous checkout was a test payment. Live payments are now enabled. Continue to PayU to start a fresh checkout.' };
+}
+
 // Caller holds the user and order locks. Verified pending attempts only return status recovery.
 export async function preparePayuCheckout(tx: Transaction, order: Order, email: unknown) {
   const config = payuConfig(true);

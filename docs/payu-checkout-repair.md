@@ -1,5 +1,15 @@
 # PayU checkout repair — 26 October 2026
 
+## Live cutover recovery — 27 October 2026
+
+Live credentials and Production mode remain unchanged. After the merchant confirmed sandbox end-to-end success and requested Live activation, a restored browser receipt caused `Payment environment mismatch`. Vercel's production logs identified transaction `c6f01c9862f4cd772b25b178`, belonging to the failed Rs 2750 sandbox order `VPB-202610-161353`; the visible cart had meanwhile changed to Rs 1. Read-only database inspection found no Rs 1 order. The frontend was checking the older receipt instead of initiating the current cart.
+
+Owned-order verification, retry and replayed creation now return an explicit recovery code only for a stored TEST attempt when the current gateway is Production. The browser removes that old receipt/request context and restores the current cart's payment action without clearing the cart or automatically charging. Fresh Live creation excludes matching retired test orders from deduplication, preserves their history, and releases only their matching temporary stock reservations under locks so the last unit can be reserved by the new Live order. New Live attempts still deduplicate under the existing user/order locks. Pending Live payments and same-environment merchant-key mismatches cannot use this recovery path.
+
+Validation: 166 backend tests passed, including preservation of pending/failed/paid test records, last-unit stock recovery, concurrent Live creation and blocked mismatched Live payments. All 14 browser regressions passed, including restored test receipts, stale request IDs and preservation of uncertain Live attempts. The production build passed. No real-money transaction or manual production database change was performed for this repair. After deployment, refresh the checkout once to load the recovery code, then continue to PayU.
+
+## Original investigation
+
 Subsequent merchant-authorized testing switched the public Vercel target to PayU Test Mode and identified the real sandbox redirect host. See [sandbox validation](payu-sandbox-validation.md) for the current deployed mode, actual sandbox results and remaining Live checks. The original incident analysis below describes the investigation before that switch.
 
 Implemented and tested locally. **Deployment and fresh authoritative PayU reconciliation remain outstanding.** The user subsequently supplied order VPB-202610-703439 and www.vpbbarelimacker.com. Read-only queries against the configured database located the order and related attempts, and public HTTP headers confirmed the old CSP remains deployed. No Live PayU credentials, merchant dashboard session or screenshot transaction ID were available. No production configuration, database records, charges or refunds were changed.
