@@ -2,7 +2,7 @@
 
 ## Architecture
 
-The existing Next.js/Drizzle/PostgreSQL checkout and Razorpay verification remain in place. Payment initiation saves a pending order using database prices and the active authenticated user's registered phone. It does **not** send confirmation. Signed checkout verification fetches captured payment state from Razorpay; signed capture webhooks also use `finalizePayment`.
+The existing Next.js/Drizzle/PostgreSQL checkout now prepares PayU Hosted Checkout; historical Razorpay verification remains. See [PayU migration](payu-migration.md). Payment initiation saves a pending order using database prices and the active authenticated user's registered phone. It does **not** send confirmation. PayU response hashes and server verification bind captured state to the stored payment attempt; signed payment webhooks use the same `finalizePayment`. Legacy Razorpay captures still use their existing handlers.
 
 Finalization atomically inserts one `order_notifications` row with the verified paid order. Only a newly confirmed payment queues a notification; there is no historical backfill. Duplicate verification/webhooks cannot queue another row. After commit, Next.js `after()` processes the row without delaying the HTTP response. A scheduler recovers pending rows if the response task is interrupted. Notification retries never create orders or rerun payment finalization.
 
@@ -65,7 +65,7 @@ Exactly-once delivery cannot be guaranteed across a database and third-party HTT
 
 ## Real test order
 
-1. Apply migration, configure the actual approved template and rotated key, enable sending and schedule the worker. Use staging and a registered account with a WhatsApp number you control. Razorpay test capture is suitable where supported; MSG91 sends are real and may be charged.
+1. Apply migration, configure the actual approved template and rotated key, enable sending and schedule the worker. Use staging and a registered account with a WhatsApp number you control. PayU sandbox capture is suitable after merchant test configuration; MSG91 sends are real and may be charged.
 2. Submit a normal checkout. While payment is pending/authorized, verify no notification row/message appears. Fail/cancel a separate payment and verify no confirmation.
 3. Complete capture. Verify paid/confirmed order state and exactly one notification row. Check recipient/name/order ID/total against stored order data and verify that exactly the three approved body variables are present.
 4. Verify `accepted` and `provider_request_id`. Match the request/CRQID in MSG91 and check **Delivered** or Read, then inspect the actual phone message and variable order. If unknown, inspect the actual response contract in MSG91 before retrying. Acceptance alone does not prove delivery.
@@ -87,11 +87,11 @@ The official Get Templates API still reported pending approval for this template
 
 ## Controlled production checks
 
-An explicitly authorized controlled notification test can limit the authenticated worker to one order with `GET /api/internal/whatsapp?orderId=<database-order-uuid>` and its normal scheduler bearer credential. UUID validation and the same payment/recipient/idempotency checks apply. Other pending notifications are not sent by a targeted invocation. An accepted or unknown row is never automatically requeued for testing; reconcile against MSG91's final failed-delivery report first. Razorpay test mode does not make MSG91 sends simulated: provider acceptance and actual delivery still require separate verification.
+An explicitly authorized controlled notification test can limit the authenticated worker to one order with `GET /api/internal/whatsapp?orderId=<database-order-uuid>` and its normal scheduler bearer credential. UUID validation and the same payment/recipient/idempotency checks apply. Other pending notifications are not sent by a targeted invocation. An accepted or unknown row is never automatically requeued for testing; reconcile against MSG91's final failed-delivery report first. Payment sandbox mode does not make MSG91 sends simulated: provider acceptance and actual delivery still require separate verification.
 
 ## Verified template-lookup investigation (12 October 2026)
 
-Trace: checkout creates the local pending order using database prices and the authenticated profile; verified Razorpay capture finalizes it and queues one notification atomically; Next.js after-response work or cron processes that durable row; the server reads its registered recipient and persisted order fields; the MSG91 v5 bulk template POST is submitted only after template approval/schema preflight passes.
+Trace: checkout creates the local pending order using database prices and the authenticated profile; verified provider capture finalizes it and queues one notification atomically; Next.js after-response work or cron processes that durable row; the server reads its registered recipient and persisted order fields; the MSG91 v5 bulk template POST is submitted only after template approval/schema preflight passes.
 
 The official Get Templates API returned the configured template in language `en`, with matching namespace, Utility category, positional text variables `body_1` and `body_2`, `is_disabled=0`, but approval **status `pending`**. The two previous templates were also pending. MSG91's UI Enabled flag is different from this approval state. The official delivery report confirmed template-not-found failure with null sent/delivery timestamps. No successfully delivered message has been verified.
 

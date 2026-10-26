@@ -18,7 +18,7 @@ export async function ensureInvoice(orderId: string) {
     if (!order) throw new DeliveryError('Order not found', 404);
     const [existing] = await tx.select().from(orderInvoices).where(eq(orderInvoices.orderId, orderId));
     if (existing) return existing;
-    if (order.paymentStatus !== 'paid' || !order.paidAt || !order.razorpayPaymentId || ['cancelled', 'placed', 'rejected'].includes(order.orderStatus))
+    if (order.paymentStatus !== 'paid' || !order.paidAt || !(order.razorpayPaymentId || order.payuPaymentId) || ['cancelled', 'placed', 'rejected'].includes(order.orderStatus))
       throw new DeliveryError('Invoice is available after verified payment and order confirmation', 409);
     const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId)).orderBy(asc(orderItems.id));
     const values = [order.subtotal, order.shippingCharge, order.discount, order.total, ...items.flatMap(i => [i.price, i.quantity])];

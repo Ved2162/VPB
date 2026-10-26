@@ -58,10 +58,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (body.paymentStatus !== undefined && !['pending', 'paid', 'failed', 'refunded'].includes(body.paymentStatus)) throw new DeliveryError('Invalid payment status');
     const [before] = await db.select().from(orders).where(eq(orders.id, id));
     if (!before) throw new DeliveryError('Order not found', 404);
-    if (before.razorpayOrderId && body.paymentStatus !== undefined && body.paymentStatus !== before.paymentStatus) throw new DeliveryError('Payment status is managed by the verified payment gateway', 409);
+    if ((before.razorpayOrderId || before.payuTxnId) && body.paymentStatus !== undefined && body.paymentStatus !== before.paymentStatus) throw new DeliveryError('Payment status is managed by the verified payment gateway', 409);
     if (body.orderStatus === 'confirmed' && before.paymentData?.stockReviewRequired) {
-      if (!before.razorpayOrderId || !before.razorpayPaymentId) throw new DeliveryError('Payment needs manual reconciliation', 409);
-      await finalizePayment({ orderId: before.razorpayOrderId, paymentId: before.razorpayPaymentId, amount: before.total * 100, currency: 'INR', reconciledBy: me.id });
+      if (!(before.razorpayOrderId && before.razorpayPaymentId || before.payuTxnId && before.payuPaymentId)) throw new DeliveryError('Payment needs manual reconciliation', 409);
+      await finalizePayment({ provider: before.payuTxnId ? 'payu' : 'razorpay', orderId: (before.payuTxnId || before.razorpayOrderId)!, paymentId: (before.payuPaymentId || before.razorpayPaymentId)!, amount: before.total * 100, currency: 'INR', reconciledBy: me.id });
       scheduleOrderNotification(before.id);
     }
     return await db.transaction(async tx => {
@@ -71,11 +71,11 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       if (!actor?.active || actor.role !== 'admin' || actor.sessionVersion !== me.sessionVersion) throw new DeliveryError('Admin session expired', 401);
       const patch: Partial<typeof orders.$inferInsert> = { updatedAt: new Date() };
       if (body.orderStatus !== undefined) {
-        if (!['placed', 'cancelled'].includes(body.orderStatus) && (order.paymentData?.stockReviewRequired || order.razorpayOrderId && (order.paymentStatus !== 'paid' || order.orderStatus === 'cancelled'))) throw new DeliveryError('This order is not available for fulfillment', 409);
+        if (!['placed', 'cancelled'].includes(body.orderStatus) && (order.paymentData?.stockReviewRequired || (order.razorpayOrderId || order.payuTxnId) && (order.paymentStatus !== 'paid' || order.orderStatus === 'cancelled'))) throw new DeliveryError('This order is not available for fulfillment', 409);
         patch.orderStatus = body.orderStatus;
       }
       if (body.paymentStatus !== undefined) {
-        if (order.razorpayOrderId && body.paymentStatus !== order.paymentStatus) throw new DeliveryError('Payment status is managed by the verified payment gateway', 409);
+        if ((order.razorpayOrderId || order.payuTxnId) && body.paymentStatus !== order.paymentStatus) throw new DeliveryError('Payment status is managed by the verified payment gateway', 409);
         patch.paymentStatus = body.paymentStatus;
       }
       await tx.update(orders).set(patch).where(eq(orders.id, id));

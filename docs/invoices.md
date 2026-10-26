@@ -41,7 +41,7 @@ Run `npm test`, `npm run lint`, `npm run build`, then `npx playwright test`. Tes
 
 Manual real-device check:
 
-1. Log in and place an order through the existing Razorpay test checkout. Wait for server-confirmed order success.
+1. Log in and place an order through the configured PayU sandbox checkout. Wait for server-confirmed order success.
 2. Download Invoice (PDF); compare items, shipping, discount and total with the saved order. Check seller phone, unique invoice number and ₹ glyphs.
 3. Download again and from My Orders; the number and historical values must match. Confirm a second account cannot access the invoice URL.
 4. On a phone supporting file sharing, tap Share Invoice to prepare, then tap again to select a sharing app. Confirm the receiving app gets the PDF. Cancel sharing once and verify no success message.

@@ -115,7 +115,7 @@ export default function AccountPage() {
                       <span className={`pill ${o.paymentStatus === "paid" ? "bg-green-100 text-green-800" : o.paymentStatus === "failed" ? "bg-red-100 text-red-800" : o.paymentStatus === "refunded" ? "bg-purple-100 text-purple-800" : "bg-amber-100 text-amber-800"}`}>
                         Payment: {o.paymentStatus}
                       </span>
-                      {o.razorpayPaymentId && <span className="pill bg-stone-100 font-mono text-[10px] text-stone-600">{o.razorpayPaymentId}</span>}
+                      {(o.payuPaymentId || o.razorpayPaymentId) && <span className="pill bg-stone-100 font-mono text-[10px] text-stone-600">{o.payuPaymentId || o.razorpayPaymentId}</span>}
                     </div>
                   </div>
                   <div className="mt-3 flex gap-2 overflow-x-auto no-scrollbar">
@@ -144,6 +144,7 @@ export default function AccountPage() {
                   </div>
                   {o.shipment && <ShipmentTimeline shipment={o.shipment} />}
                   {['paid', 'refunded'].includes(o.paymentStatus) && <InvoiceActions orderId={o.id} />}
+                  {o.payuTxnId && ['pending', 'failed'].includes(o.paymentStatus) && <Link href={'/checkout?paymentOrder=' + o.id} className="btn-ghost !px-3 !py-2 !text-xs">Check payment / retry</Link>}
                 </div>
               ))}
             </div>

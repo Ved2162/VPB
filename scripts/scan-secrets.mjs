@@ -6,7 +6,7 @@ const git = (...args) => execFileSync('git', args, { encoding: 'utf8', maxBuffer
 const known = [];
 if (existsSync('.env')) for (const line of readFileSync('.env', 'utf8').split(/\r?\n/)) {
   const match = line.match(/^([A-Z_]+)\s*=\s*(.*)$/);
-  if (match && /SECRET|API_KEY|PASSWORD|TOKEN|PRIVATE_KEY|DATABASE_URL/.test(match[1])) {
+  if (match && /SECRET|SALT|API_KEY|PASSWORD|TOKEN|PRIVATE_KEY|DATABASE_URL/.test(match[1])) {
     const value = match[2].trim().replace(/^['"]|['"]$/g, '');
     if (value.length >= 8) known.push([match[1], value]);
   }
@@ -16,7 +16,7 @@ const patterns = {
   private_key: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/g,
   github_token: /(?:gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{40,})/g,
   aws_key: /AKIA[A-Z0-9]{16}/g,
-  literal_private_setting: /(?:JWT_SECRET|RENFLAIR_API_KEY|RAZORPAY_KEY_SECRET|RAZORPAY_WEBHOOK_SECRET|AISENSY_API_KEY)\s*[:=]\s*['"]([^'"\r\n]{8,})['"]/g,
+  literal_private_setting: /(?:JWT_SECRET|PAYU_MERCHANT_SALT|RENFLAIR_API_KEY|RAZORPAY_KEY_SECRET|RAZORPAY_WEBHOOK_SECRET|AISENSY_API_KEY)\s*[:=]\s*['"]([^'"\r\n]{8,})['"]/g,
 };
 const seedSource = git('rev-list', '--objects', '--all').split('\n').filter(row => row.endsWith(' src/app/api/seed/route.ts')).map(row => git('cat-file', '-p', row.split(' ')[0])).join('\n');
 const retiredDefaults = [...new Set([...seedSource.matchAll(/const (adminPass|demoPass)\s*=\s*process\.env\.\w+\s*\|\|\s*"([^"]+)"/g)].map(match => match[2]))];

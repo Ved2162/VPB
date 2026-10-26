@@ -9,13 +9,13 @@ import { Check, Lock, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
 import { useCart, useAuth, useToast } from "@/lib/store";
 import { money } from "@/lib/data";
 import { SafeImg } from "@/components/site";
-import RazorpayLoader, { openRazorpay } from "@/lib/razorpay-client";
+
 import { InvoiceActions } from '@/components/invoice-actions';
 
 const STEPS = ["Account", "Address", "Summary", "Payment", "Done"];
 
 export default function CheckoutPage() {
-  const { lines, subtotal, clear, ready } = useCart();
+  const { lines, subtotal: cartSubtotal, clear, ready } = useCart();
   const { me, loading, refresh, setUser } = useAuth();
   const { toast } = useToast();
   const router = useRouter();
@@ -32,7 +32,10 @@ export default function CheckoutPage() {
   const [form, setForm] = useState({ name: "", phone: "", addressLine: "", city: "", state: "", pincode: "", landmark: "" });
   const [pay, setPay] = useState("upi");
   const [placing, setPlacing] = useState(false);
-  const [pendingReceipt, setPendingReceipt] = useState<{ razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string } | null>(null);
+  const [pendingReceipt, setPendingReceipt] = useState<string | null>(null);
+  const [paymentFailed, setPaymentFailed] = useState(false);
+  const [paymentEmail, setPaymentEmail] = useState('');
+  const restoredPayment = useRef(false);
   const [order, setOrder] = useState<any>(null);
   // OTP auth state for checkout Step 1
   const [otpName, setOtpName] = useState("");
@@ -43,9 +46,10 @@ export default function CheckoutPage() {
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [err, setErr] = useState("");
 
-  const discount = subtotal >= 6000 ? 200 : 0;
-  const ship = 0;
-  const total = subtotal - discount + ship;
+  const subtotal = order?.subtotal ?? cartSubtotal;
+  const discount = order?.discount ?? (subtotal >= 6000 ? 200 : 0);
+  const ship = order?.shippingCharge ?? 0;
+  const total = order?.total ?? subtotal - discount + ship;
 
   // OTP cooldown timer
   const otpTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -93,72 +97,78 @@ export default function CheckoutPage() {
     } else toast(j.error || "Failed");
   };
 
-  const verifyReceipt = async (receipt: NonNullable<typeof pendingReceipt>) => {
-    setPlacing(true); setErr('');
+  const verifyReceipt = async (orderId: string) => {
+    setPlacing(true); setErr(''); setPendingReceipt(orderId); setStep(3);
     try {
-      const response = await apiFetch('/api/payment/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(receipt) });
+      const response = await apiFetch('/api/payment/payu/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) });
       const confirmation = await response.json();
-      if (!confirmation.ok) throw new Error(confirmation.error || 'Payment confirmation is pending. Retry verification.');
-      const result = await (await apiFetch('/api/orders/' + confirmation.orderId)).json();
-      if (!result.ok || !result.order) throw new Error('Payment received. Order details are temporarily unavailable. Retry verification or check My Orders.');
-      setOrder(result.order); setPendingReceipt(null); setStep(4); clear(); toast(result.order.fulfillmentPending ? 'Payment received - your order is awaiting review.' : 'Payment successful - order confirmed!');
-    } catch (error) { setErr(error instanceof Error ? error.message : 'Unable to confirm payment'); setStep(3); }
+      if (response.status === 404) { sessionStorage.removeItem('vpb-payu-order'); setPendingReceipt(null); }
+      if (!confirmation.ok) throw new Error(confirmation.error || 'Payment verification is pending. Check again shortly.');
+      const result = await (await apiFetch('/api/orders/' + orderId)).json();
+      if (!result.ok || !result.order) throw new Error('Order details are temporarily unavailable. Check again or visit My Orders.');
+      setOrder(result.order);
+      setPaymentFailed(confirmation.paymentStatus === 'failed');
+      if (confirmation.paymentStatus !== 'paid') {
+        setErr(confirmation.paymentStatus === 'failed' ? 'Payment failed or was cancelled. You can retry the same order.' : 'Payment is awaiting confirmation. Check again shortly or visit My Orders.');
+        return;
+      }
+      setPendingReceipt(null); setStep(4); clear();
+      sessionStorage.removeItem('vpb-payu-order');
+      sessionStorage.removeItem('vpb-checkout-request');
+      window.history.replaceState(null, '', '/checkout');
+      toast(result.order.fulfillmentPending ? 'Payment received - your order is awaiting review.' : 'Payment successful - order confirmed!');
+    } catch (error) { setErr(error instanceof Error ? error.message : 'Unable to confirm payment'); }
     finally { setPlacing(false); }
   };
 
+  useEffect(() => {
+    if (!me || loading || restoredPayment.current) return;
+    const orderId = new URLSearchParams(window.location.search).get('paymentOrder') || sessionStorage.getItem('vpb-payu-order');
+    // Restore browser storage after hydration; cancel the task on unmount.
+    const timer = window.setTimeout(() => {
+      restoredPayment.current = true;
+      if (orderId && /^[0-9a-f-]{36}$/i.test(orderId)) void verifyReceipt(orderId);
+    }, 0);
+    return () => window.clearTimeout(timer);
+    // Restore once after login; authenticated API determines payment state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, loading]);
+
   const placeOrder = async (retryOrderId?: string) => {
     if (placing) return;
-    if (pendingReceipt) { await verifyReceipt(pendingReceipt); return; }
-    if (!retryOrderId && !sel) { toast("Select delivery address"); setStep(1); return; }
-    setPlacing(true); setErr("");
+    if (pendingReceipt && !paymentFailed) { await verifyReceipt(pendingReceipt); return; }
+    const existingId = retryOrderId || pendingReceipt;
+    if (!existingId && !sel) { toast('Select delivery address'); setStep(1); return; }
+    setPlacing(true); setErr('');
     try {
-      // Always fetch Razorpay order from secure server (no frontend amounts)
-      let rz: Response;
-      if (retryOrderId) {
-        rz = await apiFetch("/api/payment/retry", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ orderId: retryOrderId }) });
-      } else {
-        rz = await apiFetch("/api/payment/create", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ items: lines.map((l) => ({ id: l.id, qty: l.qty })), address: sel, paymentMethod: pay }) });
+      const fingerprint = JSON.stringify({ items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel });
+      let checkoutRequest: { id: string; fingerprint: string } | null = null;
+      try { checkoutRequest = JSON.parse(sessionStorage.getItem('vpb-checkout-request') || 'null'); } catch { /* Reset invalid browser state. */ }
+      if (!checkoutRequest || checkoutRequest.fingerprint !== fingerprint) {
+        checkoutRequest = { id: crypto.randomUUID(), fingerprint };
+        sessionStorage.setItem('vpb-checkout-request', JSON.stringify(checkoutRequest));
       }
-      const rj = await rz.json();
-      if (!rj.ok) {
-        if (rj.needLogin) { setStep(0); toast("Please login to continue payment"); }
-        else toast(rj.error || "Could not create payment");
-        setPlacing(false); return;
+      const response = await apiFetch(existingId ? '/api/payment/retry' : '/api/payment/create', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify(existingId ? { orderId: existingId, email: paymentEmail } : { items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel, email: paymentEmail, idempotencyKey: checkoutRequest.id }) });
+      const result = await response.json();
+      if (!result.ok) throw new Error(result.error || 'Unable to prepare payment');
+      if (result.alreadyPaid || result.needsVerification) { await verifyReceipt(result.orderId); return; }
+      if (!['https://test.payu.in/_payment', 'https://secure.payu.in/_payment'].includes(result.action)) throw new Error('Invalid checkout destination');
+      sessionStorage.setItem('vpb-payu-order', result.orderId);
+      setPendingReceipt(result.orderId); setPaymentFailed(false);
+      const form = document.createElement('form');
+      form.method = 'POST'; form.action = result.action;
+      for (const [name, value] of Object.entries(result.fields)) {
+        const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = String(value); form.appendChild(input);
       }
-
-      if (!rj.keyId || rj.keyId === "rzp_test_MISSING" || rj.keyId.includes("xxxxxx")) {
-        setErr("Razorpay is not configured on the server. Please add valid RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to the .env file.");
-        toast("Payment gateway not configured.");
-        setPlacing(false);
-        return;
-      }
-
-      openRazorpay({
-        key: rj.keyId,
-        order: rj.order,
-        prefill: rj.prefill,
-        name: "VPB — Verai Patang Bhandar",
-        description: "Premium Bareilly Manjha",
-        onSuccess: async (resp) => {
-          setPendingReceipt(resp);
-          await verifyReceipt(resp);
-        },
-        onFailure: async (err: any) => {
-          if (err?.code === "CANCELLED" && rj?.order?.id) {
-            await apiFetch("/api/payment/failed", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ razorpay_order_id: rj.order.id, error: err }) });
-            setErr("Payment was cancelled. You can retry without losing your order.");
-          } else {
-            await apiFetch("/api/payment/failed", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ razorpay_order_id: rj.order.id, error: err }) });
-            setErr(err?.description || "Payment failed. You can retry with the same order.");
-          }
-          setPlacing(false);
-        },
-      });
-    } catch (e: any) { setErr(e?.message || "Payment gateway error. Please retry."); toast("Payment gateway error. Please retry."); setPlacing(false); }
+      document.body.appendChild(form); form.submit(); form.remove();
+    } catch (error) { setErr(error instanceof Error ? error.message : 'Payment gateway error. Please retry.'); }
+    finally { setPlacing(false); }
   };
 
   if (!ready || loading) return <SectionLoader label="Preparing secure checkout…" />;
-  if (lines.length === 0 && !order)
+  if (lines.length === 0 && !order && !pendingReceipt)
     return <div className="mx-auto max-w-xl px-4 py-20 text-center"><h1 className="font-serif text-3xl font-bold">Checkout</h1><p className="mt-2 text-stone-500">Your cart is empty.</p><Link href="/shop" className="btn-primary mt-5">Shop Now</Link></div>;
 
   return (
@@ -249,7 +259,7 @@ export default function CheckoutPage() {
                   <div className="card p-6">
                     <h3 className="font-serif text-xl font-bold">Step 3 — Order Summary</h3>
                     <div className="mt-3 space-y-2">
-                      {lines.map((l) => (
+                      {order && pendingReceipt ? <p className="text-sm">Saved order <b>{order.orderNumber}</b> ? {money(order.total)}</p> : lines.map((l) => (
                         <div key={l.id} className="flex items-center gap-3 text-sm">
                           <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-[#f6ead2]"><SafeImg src={l.image} alt={l.name} sizes="48px" className="object-cover" /></span>
                           <span className="flex-1 font-semibold">{l.name} × {l.qty}</span><b>{money(l.price * l.qty)}</b>
@@ -263,7 +273,7 @@ export default function CheckoutPage() {
                 {step >= 3 && (
                   <div className="card p-6">
                     <h3 className="font-serif text-xl font-bold">Step 4 — Payment</h3>
-                    <p className="mt-1 flex items-center gap-1.5 text-xs text-stone-500"><Lock size={12} /> Secured test payment. No real card stored.</p>
+                    <p className="mt-1 flex items-center gap-1.5 text-xs text-stone-500"><Lock size={12} /> Secure payment. Card details are handled by PayU.</p>
                     <div className="mt-3 grid gap-2">
                       {[["upi", "UPI — GPay / PhonePe / Paytm"], ["card", "Credit / Debit Card"]].map(([v, l]) => (
                         <button key={v} onClick={() => setPay(v)} className={`flex items-center gap-3 rounded-2xl border-2 p-4 text-left text-sm font-bold ${pay === v ? "border-[#7a1f1f] bg-[#fff6e3]" : "border-[#ecdcb9]"}`}>
@@ -271,8 +281,8 @@ export default function CheckoutPage() {
                         </button>
                       ))}
                     </div>
-                    {pay === "upi" && <input placeholder="yourname@upi" className="input mt-3" />}
-                    <p className="rounded-xl bg-[#fff4de] px-3 py-2 text-[12.5px] font-semibold text-[#7a5b1e]">You will be redirected to Razorpay&apos;s secure UPI/Card checkout. We do not store card details.</p>
+                    <label className="mt-3 block text-sm font-semibold">Payment email<input type="email" autoComplete="email" required value={paymentEmail} onChange={e => setPaymentEmail(e.target.value)} placeholder="you@example.com" className="input mt-2" /></label>
+                    <p className="rounded-xl bg-[#fff4de] px-3 py-2 text-[12.5px] font-semibold text-[#7a5b1e]">You will be redirected to PayU&apos;s secure checkout to select your payment method. We do not store card details.</p>
                     {err && (
                       <div className="mt-2 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">
                         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -281,7 +291,7 @@ export default function CheckoutPage() {
                       </div>
                     )}
                     <button onClick={() => placeOrder()} disabled={placing} className="btn-primary mt-4 w-full !py-4 !text-[15px] disabled:opacity-60">
-                      {placing ? <ButtonLoader label="Processing payment…" /> : pendingReceipt ? "Retry payment verification" : <><Lock size={15} /> Pay {money(total)}</>}
+                      {placing ? <ButtonLoader label="Processing payment…" /> : pendingReceipt ? (paymentFailed ? "Retry payment" : "Check payment status") : <><Lock size={15} /> Pay {money(total)}</>}
                     </button>
                   </div>
                 )}

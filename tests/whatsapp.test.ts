@@ -66,15 +66,14 @@ test('pending orders and failed finalization never queue or send', async () => {
   expect(await notification(order.id)).toBeUndefined();
   await processOrderNotifications(order.id); expect(transport).not.toHaveBeenCalled();
 });
-test('failed gateway order creation rolls back the order and cannot queue confirmation', async () => {
+test('unconfigured PayU cannot create orders or queue confirmation', async () => {
   const [product] = await database.db.insert(schema.products).values({ name: 'Test manjha', slug: 'wa-failure-test', sku: 'WA-FAILURE', price: 123, stockQuantity: 5 }).returning();
   const ordersBefore = (await database.db.select().from(schema.orders)).length;
   const notificationsBefore = (await database.db.select().from(schema.orderNotifications)).length;
-  vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create: async () => { throw new Error('gateway unavailable'); } } } as unknown as NonNullable<ReturnType<typeof gateway.getRazorpay>>);
   const response = await checkout.POST(new Request('http://localhost/api/payment/create', { method: 'POST',
     headers: { cookie: 'vpb_token=' + signToken(customer) }, body: JSON.stringify({ items: [{ id: product.id, qty: 1 }],
       address: { name: customer.name, phone: customer.phone, addressLine: 'Test street', city: 'Bareilly', state: 'UP', pincode: '243001' } }) }));
-  expect(response.status).toBe(502);
+  expect(response.status).toBe(503);
   expect((await database.db.select().from(schema.orders)).length).toBe(ordersBefore);
   expect((await database.db.select().from(schema.orderNotifications)).length).toBe(notificationsBefore);
   expect(transport).not.toHaveBeenCalled();
@@ -106,6 +105,19 @@ test('verified payment creates one durable row; concurrent workers and payment r
   expect(payload.payload.template.to_and_components[0].to).toEqual(['919400000021']);
   expect(payload.payload.template.to_and_components[0].components.body_4.value).toBe('INR 123.00');
   expect(payload.payload.template.to_and_components[0].components.body_6.value).toBe('Paid');
+});
+
+test('verified PayU orders use the existing notification worker; delivery failure never reverses payment', async () => {
+  const order = await pending();
+  await confirm(order);
+  await database.db.update(schema.orders).set({ razorpayOrderId: null, razorpayPaymentId: null, payuTxnId: 'a'.repeat(24), payuPaymentId: '123987', paymentMethod: 'payu' }).where(eq(schema.orders.id, order.id));
+  transport.mockImplementationOnce(async () => { throw new Error('notification unavailable'); });
+  await safelyProcessOrderNotifications(order.id);
+  expect(transport).toHaveBeenCalledTimes(1);
+  expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, order.id)))[0].paymentStatus).toBe('paid');
+  expect((await notification(order.id)).status).toBe('unknown');
+  await processOrderNotifications(order.id);
+  expect(transport).toHaveBeenCalledTimes(1);
 });
 test('missing settings keep the queue durable and template variable order is explicit', async () => {
   const order = await pending(); const paid = await confirm(order);

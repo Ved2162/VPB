@@ -243,6 +243,8 @@ export default function Admin() {
                   <p className="mt-1 text-xs">{(selOrder.shippingAddress as any)?.addressLine}, {(selOrder.shippingAddress as any)?.city} — {(selOrder.shippingAddress as any)?.pincode}</p>
                   <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
                     <span className={`pill ${selOrder.paymentStatus === "paid" ? "bg-green-100 text-green-800" : selOrder.paymentStatus === "failed" ? "bg-red-100 text-red-800" : selOrder.paymentStatus === "refunded" ? "bg-purple-100 text-purple-800" : "bg-amber-100 text-amber-800"}`}>Payment: {selOrder.paymentStatus}</span>
+                    {selOrder.payuTxnId && <span className="pill bg-stone-100 font-mono text-stone-600">PayU txn: {selOrder.payuTxnId}</span>}
+                    {selOrder.payuPaymentId && <span className="pill bg-stone-100 font-mono text-stone-600">PayU payment: {selOrder.payuPaymentId}</span>}
                     {selOrder.razorpayOrderId && <span className="pill bg-stone-100 font-mono text-stone-600">rzp: {selOrder.razorpayOrderId}</span>}
                     {selOrder.razorpayPaymentId && <span className="pill bg-stone-100 font-mono text-stone-600">pay: {selOrder.razorpayPaymentId}</span>}
                     {selOrder.razorpayWebhookVerified && <span className="pill bg-emerald-50 text-emerald-800">Webhook verified</span>}

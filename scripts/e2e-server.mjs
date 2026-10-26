@@ -15,12 +15,14 @@ const source = await readFile(new URL('../src/db/schema.ts', import.meta.url), '
 const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
 const schema = {};
 new Function('require', 'exports', compiled)(createRequire(import.meta.url), schema);
-const baseline = Object.fromEntries(Object.entries(schema).filter(([name]) => !['inventoryReservations', 'productImages', 'invoiceCounters', 'orderInvoices', 'invoiceCancellations', 'orderNotifications', 'deliveryStaff', 'deliveryProviders', 'shipments', 'shipmentHistory', 'deliveryAudit', 'deliveryRateLimits'].includes(name)));
+const baseline = Object.fromEntries(Object.entries(schema).filter(([name]) => !['payuAttempts', 'inventoryReservations', 'productImages', 'invoiceCounters', 'orderInvoices', 'invoiceCancellations', 'orderNotifications', 'deliveryStaff', 'deliveryProviders', 'shipments', 'shipmentHistory', 'deliveryAudit', 'deliveryRateLimits'].includes(name)));
 const snapshot = generateDrizzleJson(baseline);
   delete snapshot.tables['public.users'].columns.username;
   delete snapshot.tables['public.users'].columns.session_version;
   for (const column of ['language', 'status', 'is_demo']) delete snapshot.tables['public.reviews'].columns[column];
   delete snapshot.tables['public.users'].uniqueConstraints.users_username_unique;
+for (const column of ['checkout_key', 'payu_txn_id', 'payu_payment_id']) delete snapshot.tables['public.orders'].columns[column];
+for (const constraint of ['orders_checkout_key_unique', 'orders_payu_txn_id_unique', 'orders_payu_payment_id_unique']) delete snapshot.tables['public.orders'].uniqueConstraints[constraint];
 await pg.exec((await generateMigration(generateDrizzleJson({}), snapshot)).join('\n'));
 await pg.exec(await readFile(new URL('../migrations/0001_delivery.sql', import.meta.url), 'utf8'));
   await pg.exec(await readFile(new URL('../migrations/0002_admin_username.sql', import.meta.url), 'utf8'));
@@ -31,11 +33,12 @@ await pg.exec(await readFile(new URL('../migrations/0001_delivery.sql', import.m
   await pg.exec(await readFile(new URL('../migrations/0007_reviews.sql', import.meta.url), 'utf8'));
   await pg.exec(await readFile(new URL('../migrations/0008_session_revocation.sql', import.meta.url), 'utf8'));
   await pg.exec(await readFile(new URL('../migrations/0009_inventory_reservations.sql', import.meta.url), 'utf8'));
+await pg.exec(await readFile(new URL('../migrations/0010_payu.sql', import.meta.url), 'utf8'));
 const passwordHash = await bcrypt.hash('E2e-only-password-2026', 10);
 await pg.query("INSERT INTO users (id,name,phone,password_hash,role) VALUES ('00000000-0000-4000-8000-000000000001','E2E Admin','9000000101',$1,'admin'), ('00000000-0000-4000-8000-000000000002','E2E Customer','9000000102',$1,'customer'), ('00000000-0000-4000-8000-000000000003','Other Customer','9000000103',$1,'customer')", [passwordHash]);
 await pg.exec("UPDATE users SET username='e2eadmin' WHERE role='admin'");
 // Separate security scenarios must not exhaust another scenario's real login budget.
-await pg.query("INSERT INTO users (id,name,phone,password_hash,role) SELECT ('00000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid, 'Security fixture ' || n, '90000001' || lpad(n::text,2,'0'), $1, 'customer' FROM generate_series(10,12) n", [passwordHash]);
+await pg.query("INSERT INTO users (id,name,phone,password_hash,role) SELECT ('00000000-0000-4000-8000-' || lpad(n::text,12,'0'))::uuid, 'Security fixture ' || n, '90000001' || lpad(n::text,2,'0'), $1, 'customer' FROM generate_series(10,23) n", [passwordHash]);
 await pg.exec("INSERT INTO addresses(user_id,name,phone,address_line,city,state,pincode,is_default) VALUES('00000000-0000-4000-8000-000000000011','Security fixture','9000000111','Test street','Bareilly','Uttar Pradesh','243001',true)");
 // Only the disposable test database receives this known OTP; no SMS or live account is touched.
 await pg.query("INSERT INTO otp_requests(phone,otp_hash,expires_at) VALUES('9000000102',$1,now()+interval '10 minutes')", [await bcrypt.hash('654321', 4)]);
@@ -45,11 +48,15 @@ await pg.exec(`INSERT INTO orders (id,user_id,order_number,subtotal,total,paymen
 await pg.exec("UPDATE orders SET order_status='confirmed', paid_at=created_at, razorpay_payment_id='pay_e2e_' || order_number");
 await pg.exec(`INSERT INTO products (id,name,slug,sku,price,stock_quantity,images) VALUES ('20000000-0000-4000-8000-000000000001','Loader test manjha','loader-test-manjha','LOADER-MANJHA',100,25,'["/images/manjha/m01.png"]');
 INSERT INTO addresses(user_id,name,phone,address_line,city,state,pincode,is_default) VALUES('00000000-0000-4000-8000-000000000002','E2E Customer','9000000102','Test street','Bareilly','Uttar Pradesh','243001',true);`);
+await pg.exec("INSERT INTO addresses(user_id,name,phone,address_line,city,state,pincode,is_default) VALUES('00000000-0000-4000-8000-000000000020','PayU browser fixture','9000000120','Test street','Bareilly','Uttar Pradesh','243001',true)");
 const socket = new PGLiteSocketServer({ db: pg, host: '127.0.0.1', port: 54329, maxConnections: 20 });
 await socket.start();
 process.env.DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:54329/postgres';
 process.env.JWT_SECRET = 'isolated-browser-test-secret-not-a-production-credential';
 process.env.NEXT_OUTPUT_DIR = '.next';
+process.env.PAYU_ENABLED = 'false';
+process.env.PAYU_MERCHANT_KEY = '';
+process.env.PAYU_MERCHANT_SALT = '';
 process.env.RAZORPAY_KEY_ID = '';
 process.env.RAZORPAY_KEY_SECRET = '';
 process.env.RAZORPAY_WEBHOOK_SECRET = '';

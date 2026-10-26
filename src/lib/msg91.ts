@@ -85,7 +85,7 @@ export async function inspectMsg91Delivery(config: NonNullable<ReturnType<typeof
 }
 
 export function templatePayload(config: NonNullable<ReturnType<typeof msg91Config>>, order: typeof orders.$inferSelect, phone: string) {
-  if (order.paymentStatus !== 'paid' || !order.paidAt || !order.razorpayPaymentId) throw new Error('unverified_order');
+  if (order.paymentStatus !== 'paid' || !order.paidAt || !(order.razorpayPaymentId || order.payuPaymentId)) throw new Error('unverified_order');
   const values: Record<Field, string> = {
     customer_name: (order.customerName || 'Customer').replace(/[\r\n\t]/g, ' ').slice(0, 120),
     order_id: order.orderNumber,

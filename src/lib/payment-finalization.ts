@@ -1,18 +1,23 @@
 ﻿import { db } from '@/db';
-import { orders, orderItems, products, orderNotifications, deliveryAudit } from '@/db/schema';
+import { orders, orderItems, products, orderNotifications, deliveryAudit, payuAttempts } from '@/db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { DeliveryError } from './shipment-rules';
 import { safelyEnsureInvoice } from './invoices';
 import { lockedStock, releaseStock, validateStockItems } from './inventory';
 
-type Confirmation = { orderId: string; paymentId: string; amount: number; currency: string; method?: string; userId?: string; webhook?: boolean; signature?: string; reconciledBy?: string };
+type Confirmation = { provider?: 'razorpay' | 'payu'; orderId: string; paymentId: string; amount: number; currency: string; method?: string; userId?: string; webhook?: boolean; signature?: string; reconciledBy?: string };
 // Callback, webhook and authorized stock reconciliation share the same order lock.
 export async function finalizePayment(confirmation: Confirmation) {
+  const payu = confirmation.provider === 'payu';
+  const [attempt] = payu ? await db.select().from(payuAttempts).where(eq(payuAttempts.txnId, confirmation.orderId)) : [];
+  if (payu && !attempt) throw new DeliveryError('Payment attempt not found', 404);
   const result = await db.transaction(async tx => {
-    const [order] = await tx.select().from(orders).where(and(eq(orders.razorpayOrderId, confirmation.orderId), confirmation.userId ? eq(orders.userId, confirmation.userId) : undefined)).for('update');
+    const [order] = await tx.select().from(orders).where(and(payu ? eq(orders.id, attempt!.orderId) : eq(orders.razorpayOrderId, confirmation.orderId), confirmation.userId ? eq(orders.userId, confirmation.userId) : undefined)).for('update');
     if (!order) throw new DeliveryError('Order not found', 404);
     if (confirmation.currency !== 'INR' || !Number.isSafeInteger(confirmation.amount) || confirmation.amount <= 0 || confirmation.amount !== order.total * 100) throw new DeliveryError('Payment amount does not match the order', 400);
-    if (['paid', 'refunded'].includes(order.paymentStatus) && order.razorpayPaymentId !== confirmation.paymentId) throw new DeliveryError('Payment needs manual reconciliation', 409);
+    if (payu && attempt!.amount !== confirmation.amount) throw new DeliveryError('Payment attempt amount mismatch');
+    if (['paid', 'refunded'].includes(order.paymentStatus) && (payu ? order.payuPaymentId : order.razorpayPaymentId) !== confirmation.paymentId) throw new DeliveryError('Payment needs manual reconciliation', 409);
+    if (payu) await tx.update(payuAttempts).set({ status: 'paid', paymentId: confirmation.paymentId, verifiedAt: new Date() }).where(eq(payuAttempts.txnId, confirmation.orderId));
     if (order.paymentStatus === 'refunded' || order.paymentStatus === 'paid' && (!order.paymentData?.stockReviewRequired || !confirmation.reconciledBy)) return { order, already: true };
     if (confirmation.reconciledBy && (order.paymentStatus !== 'paid' || order.orderStatus === 'cancelled')) throw new DeliveryError('This order cannot be released for fulfillment', 409);
     const snapshot = order.cartSnapshot;
@@ -40,8 +45,7 @@ export async function finalizePayment(confirmation: Confirmation) {
     await releaseStock(tx, order.id);
     const [paid] = await tx.update(orders).set({ paymentStatus: 'paid',
       orderStatus: order.orderStatus === 'cancelled' ? 'cancelled' : stockReviewRequired ? 'placed' : 'confirmed',
-      razorpayPaymentId: confirmation.paymentId, razorpaySignature: confirmation.signature || order.razorpaySignature,
-      razorpayWebhookVerified: confirmation.webhook || order.razorpayWebhookVerified, paidAt: order.paidAt || new Date(), paymentMethod: confirmation.method || order.paymentMethod,
+      ...(payu ? { payuTxnId: confirmation.orderId, payuPaymentId: confirmation.paymentId } : { razorpayPaymentId: confirmation.paymentId, razorpaySignature: confirmation.signature || order.razorpaySignature, razorpayWebhookVerified: confirmation.webhook || order.razorpayWebhookVerified }), paidAt: order.paidAt || new Date(), paymentMethod: confirmation.method || order.paymentMethod,
       paymentData: sql`coalesce(${orders.paymentData}, '{}'::jsonb) || ${JSON.stringify({ capturedAmount: confirmation.amount / 100, stockReviewRequired, verifiedAt: new Date().toISOString() })}::jsonb`, updatedAt: new Date(),
     }).where(eq(orders.id, order.id)).returning();
     if (!stockReviewRequired && paid.orderStatus !== 'cancelled') await tx.insert(orderNotifications).values({ orderId: paid.id }).onConflictDoNothing();

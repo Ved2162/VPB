@@ -39,20 +39,12 @@ test('a captured payment on stock hold is not presented as a confirmed order', a
   await context.request.post('/api/auth', { data: { action: 'login', phone: '9000000111', password: 'E2e-only-password-2026' } });
   await page.addInitScript(() => {
     localStorage.setItem('vpb_cart', JSON.stringify([{ id: '20000000-0000-4000-8000-000000000001', slug: 'loader-test-manjha', name: 'Loader test manjha', price: 100, image: '/images/manjha/m01.png', qty: 1, stock: 25 }]));
-    window.Razorpay = class {
-      constructor(public options: { handler: (receipt: object) => void }) {}
-      on() {}
-      open() { this.options.handler({ razorpay_order_id: 'order_hold', razorpay_payment_id: 'pay_hold', razorpay_signature: 'fixture-only' }); }
-    };
+    sessionStorage.setItem('vpb-payu-order', '10000000-0000-4000-8000-000000000001');
   });
-  // All gateway responses are local test doubles. Real credentials are disabled.
-  await page.route('https://checkout.razorpay.com/**', route => route.abort());
-  await page.route('**/api/payment/create', route => route.fulfill({ json: { ok: true, keyId: 'rzp_test_fixture', order: { id: 'order_hold', amount: 10000, currency: 'INR' } } }));
-  await page.route('**/api/payment/verify', route => route.fulfill({ json: { ok: true, orderId: '10000000-0000-4000-8000-000000000001' } }));
-  await page.route('**/api/orders/10000000-0000-4000-8000-000000000001', route => route.fulfill({ json: { ok: true, order: { id: '10000000-0000-4000-8000-000000000001', orderNumber: 'FIXTURE-HOLD', total: 100, paymentMethod: 'razorpay', paymentStatus: 'paid', orderStatus: 'placed', fulfillmentPending: true } } }));
+  // Local protocol doubles only; no provider or real credentials.
+  await page.route('**/api/payment/payu/verify', route => route.fulfill({ json: { ok: true, orderId: '10000000-0000-4000-8000-000000000001', paymentStatus: 'paid' } }));
+  await page.route('**/api/orders/10000000-0000-4000-8000-000000000001', route => route.fulfill({ json: { ok: true, order: { id: '10000000-0000-4000-8000-000000000001', orderNumber: 'FIXTURE-HOLD', total: 100, paymentMethod: 'payu', paymentStatus: 'paid', orderStatus: 'placed', fulfillmentPending: true } } }));
   await page.goto('/checkout');
-  await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
-  await page.getByRole('button', { name: /^Pay / }).click();
   await expect(page.getByRole('heading', { name: 'Payment Received', exact: true })).toBeVisible();
   await expect(page.getByText('Order Confirmed!', { exact: true })).toHaveCount(0);
   await expect(page.getByText(/review your order before confirming fulfillment/)).toBeVisible();

@@ -30,7 +30,7 @@ export async function processOrderNotifications(orderId?: string) {
     if (!claim) continue;
     const [order] = await db.select().from(orders).where(eq(orders.id, claim.orderId));
     const phone = indianWhatsAppNumber(order?.customerPhone);
-    const eligible = order && order.paymentStatus === 'paid' && order.paidAt && order.razorpayPaymentId && !['placed', 'cancelled', 'rejected'].includes(order.orderStatus) && !order.paymentData?.stockReviewRequired;
+    const eligible = order && order.paymentStatus === 'paid' && order.paidAt && (order.razorpayPaymentId || order.payuPaymentId) && !['placed', 'cancelled', 'rejected'].includes(order.orderStatus) && !order.paymentData?.stockReviewRequired;
     if (!eligible || !phone) {
       await db.update(notifications).set({ status: 'skipped', errorCode: !eligible ? 'order_ineligible' : 'invalid_recipient', updatedAt: new Date() }).where(eq(notifications.orderId, claim.orderId));
       console.info('[whatsapp]', { orderId: claim.orderId, status: 'skipped', code: !eligible ? 'order_ineligible' : 'invalid_recipient' });

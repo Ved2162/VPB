@@ -18,7 +18,7 @@ export function proxy(req: NextRequest) {
   if (pathname.startsWith('/api/')) {
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
       try {
-        if (pathname !== '/api/payment/webhook') sameOrigin(req);
+        if (!['/api/payment/webhook', '/api/payment/payu/return', '/api/payment/payu/webhook'].includes(pathname)) sameOrigin(req);
         const limit = pathname === '/api/admin/images' ? MAX_IMAGE_BYTES : 65536;
         if (Number(req.headers.get('content-length') || 0) > limit) return NextResponse.json({ ok: false, error: 'Request too large' }, { status: 413 });
       } catch { return NextResponse.json({ ok: false, error: 'Cross-origin request rejected' }, { status: 403 }); }

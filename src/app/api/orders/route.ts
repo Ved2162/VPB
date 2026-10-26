@@ -42,8 +42,8 @@ export async function POST(req: Request) {
   try {
     const me = getUserFromHeader(req);
     if (!me) return NextResponse.json({ ok: false, error: "Please login to continue", needLogin: true }, { status: 401 });
-    // Legacy direct-create disabled; checkout now uses /api/payment/create (Razorpay)
-    return NextResponse.json({ ok: false, error: "Use Razorpay flow: POST /api/payment/create" }, { status: 400 });
+    // Legacy direct-create disabled; checkout now uses /api/payment/create (PayU)
+    return NextResponse.json({ ok: false, error: "Use secure checkout: POST /api/payment/create" }, { status: 400 });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: "Unable to complete this request. Please retry." }, { status: 500 });
   }

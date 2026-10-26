@@ -1,6 +1,6 @@
 # VPB — Verai Patang Bhandar
 
-A full-stack e-commerce web application for **VPB — Verai Patang Bhandar**, a premium Bareilly manjha and kite shop. Built with Next.js, PostgreSQL, Drizzle ORM, and Razorpay.
+A full-stack e-commerce web application for **VPB — Verai Patang Bhandar**, a premium Bareilly manjha and kite shop. Built with Next.js, PostgreSQL, Drizzle ORM, and PayU (with historical Razorpay support).
 
 ---
 
@@ -14,14 +14,14 @@ A full-stack e-commerce web application for **VPB — Verai Patang Bhandar**, a 
 | Database | PostgreSQL (Neon / any PG host) |
 | ORM | Drizzle ORM |
 | Authentication | JWT (httpOnly cookies) |
-| Payments | Razorpay |
+| Payments | PayU India Hosted Checkout; historical Razorpay reconciliation |
 | Deployment | Vercel |
 
 ---
 
 ## Features
 
-- Server-side MSG91 WhatsApp confirmations after verified Razorpay capture, with durable retries. See [WhatsApp setup and real-order verification](docs/whatsapp.md).
+- Server-side MSG91 WhatsApp confirmations after verified provider capture, with durable retries. See [WhatsApp setup and real-order verification](docs/whatsapp.md).
 - Restricted delivery staff panel, manual courier tracking, shipment history, and admin-managed courier providers. See [Delivery operations and testing](docs/delivery.md).
 - Branded kite loading, OTP feedback, and bounded API loading. See [Loading behavior](docs/loading.md).
 - Security hardening and release setup are documented in [Security and production setup](docs/security.md). Review the deployment checklist before publishing.
@@ -30,7 +30,7 @@ A full-stack e-commerce web application for **VPB — Verai Patang Bhandar**, a 
 - Product detail pages with image gallery, reviews, and pincode delivery check
 - Shopping cart (localStorage-based, persisted across sessions)
 - Full checkout flow with address management
-- Razorpay payment integration (UPI, Cards, Net Banking)
+- PayU India Hosted Checkout with server verification; see [migration and approval checklist](docs/payu-migration.md)
 - Order tracking by order number
 - Customer dashboard (orders, addresses, profile)
 - Admin dashboard (product CRUD, category management, order status, customer management)
@@ -53,7 +53,7 @@ vpb/
 │   │   │   ├── orders/       # Order read + admin patch
 │   │   │   ├── extra/        # Addresses, reviews, pincode
 │   │   │   ├── admin/        # Admin CRUD (protected)
-│   │   │   ├── payment/      # Razorpay create/verify/webhook/retry/failed
+│   │   │   ├── payment/      # PayU create/retry/return/webhook/verify + legacy Razorpay
 │   │   │   ├── seed/         # Database seeder
 │   │   │   └── health/       # Health check
 │   │   ├── shop/             # Shop listing page
@@ -71,8 +71,7 @@ vpb/
 │   │   └── schema.ts         # All table definitions
 │   └── lib/
 │       ├── auth.ts           # JWT helpers, password hashing
-│       ├── razorpay.ts       # Razorpay client + signature verification
-│       ├── razorpay-client.tsx # Frontend Razorpay loader
+│       ├── razorpay.ts       # Historical Razorpay verification/refunds
 │       ├── store.tsx         # React context (cart, auth, toast)
 │       └── data.ts           # Static constants
 ├── public/
@@ -90,7 +89,7 @@ vpb/
 ## Local Development Setup
 
 ### Prerequisites
-- Node.js 18+
+- Node.js 20.9+
 - PostgreSQL database (local or cloud — [Neon](https://neon.tech) recommended)
 
 ### 1. Clone the repository
@@ -114,11 +113,9 @@ cp .env.example .env
 
 Open `.env` and fill in all required values (see [Environment Variables](#environment-variables) below).
 
-### 4. Push database schema
+### 4. Database migrations
 
-```bash
-npx drizzle-kit push
-```
+For an existing database use the reviewed SQL migration runner (`npm run db:migrate`) with an authorized migration-owner connection. Back up first, test in staging, and obtain explicit approval before production changes. Do not use schema push to migrate existing payment records. See [PayU migration safety](docs/payu-migration.md).
 
 ### 5. Start the development server
 
@@ -138,15 +135,15 @@ Product image uploads support file selection and drag-and-drop in the admin prod
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and fill in all values. **Never commit `.env`.**
+Copy `.env.example` to `.env` and configure required values. PayU variables and safe defaults are documented in [PayU migration](docs/payu-migration.md). **Never commit `.env`.**
 
 | Variable | Description |
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `JWT_SECRET` | Secret for signing JWT tokens (min 32 chars, random) |
-| `RAZORPAY_KEY_ID` | Razorpay API Key ID (from dashboard) |
-| `RAZORPAY_KEY_SECRET` | Razorpay API Key Secret (server-side only) |
-| `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook secret (from dashboard) |
+| `RAZORPAY_KEY_ID` | Razorpay API Key ID (from dashboard) Historical transactions only; retain until reconciliation is complete. |
+| `RAZORPAY_KEY_SECRET` | Razorpay API Key Secret (server-side only) Historical transactions only; retain until reconciliation is complete. |
+| `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook secret (from dashboard) Historical transactions only; retain until reconciliation is complete. |
 | `SEED_ADMIN_EMAIL` | (Optional) Admin email for seed script |
 | `SEED_ADMIN_PASSWORD` | (Optional) Admin password for seed script |
 
@@ -184,9 +181,12 @@ In the Vercel project settings → Environment Variables, add:
 ```
 DATABASE_URL          = your-production-postgresql-url
 JWT_SECRET            = your-strong-random-secret
-RAZORPAY_KEY_ID       = rzp_live_xxxxxxxxxxxx
-RAZORPAY_KEY_SECRET   = xxxxxxxxxxxxxxxxxxxx
-RAZORPAY_WEBHOOK_SECRET = your-webhook-secret
+PAYU_ENABLED=false
+PAYU_ENV=test
+PAYU_CURRENCY=INR
+PAYU_MERCHANT_KEY=
+PAYU_MERCHANT_SALT=
+PAYU_BASE_URL=
 ```
 
 ### 3. Build settings (auto-detected)
@@ -202,15 +202,11 @@ Vercel auto-detects Next.js. No manual configuration needed.
 
 ### 4. Deploy
 
-Click **Deploy**. Vercel will build and deploy the project.
+Deploy only after explicit approval and the PayU staging checklist. Vercel builds and deploys the approved revision.
 
-### 5. Configure Razorpay Webhook
+### 5. Configure payments only after approval
 
-After deployment, set the webhook URL in your [Razorpay Dashboard](https://dashboard.razorpay.com) → Webhooks:
-
-```
-https://your-domain.vercel.app/api/payment/webhook
-```
+Follow [PayU configuration, webhook URLs, sandbox evidence and controlled cutover](docs/payu-migration.md). Keep new checkout disabled until staging is verified. Preserve historical Razorpay credentials and `/api/payment/webhook`. A push to `main` can trigger Vercel deployment; approval is required before commit, push or deployment.
 
 ---
 
@@ -220,15 +216,15 @@ https://your-domain.vercel.app/api/payment/webhook
 - Token expiry: 14 days
 - Roles: `customer`, `admin`
 - Admin routes protected server-side via `getUserFromHeader()` + role check
-- No credentials are stored in frontend code or environment variables
+- Private credentials remain in server-side environment variables and are never stored in frontend code
 
 ---
 
 ## Payment
 
-- Powered by **Razorpay**
+- New checkout uses **PayU India Hosted Checkout**; live activation remains approval-gated
 - All payment amounts are calculated server-side — client amount is never trusted
-- Signature verification on every payment confirmation
+- Reverse-hash validation and PayU server verification before payment confirmation
 - Idempotent webhook handler — duplicate callbacks do not create duplicate orders
 - Failed payments are recorded but orders are not fulfilled
 
@@ -240,7 +236,7 @@ https://your-domain.vercel.app/api/payment/webhook
 - Customer can only access their own orders and addresses
 - Password hashing: bcrypt (10 rounds)
 - JWT secret must be set via environment variable — app throws at startup if missing
-- `RAZORPAY_KEY_SECRET` is server-side only — never exposed to the browser
+- `PAYU_MERCHANT_SALT` and historical `RAZORPAY_KEY_SECRET` remain server-side only — never exposed to the browser
 - No credentials are hardcoded in source code
 
 ---

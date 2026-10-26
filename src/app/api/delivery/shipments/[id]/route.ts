@@ -76,7 +76,7 @@ export async function PATCH(req: Request, { params }: Context) {
       if (JSON.stringify(before) === JSON.stringify(after)) return { changed: false, version: existing?.version || 0 };
       if (body.version !== (existing?.version || 0)) throw new DeliveryError('Another staff member changed this shipment. Refresh and try again.', 409);
       validateTransition(before.status, after.status);
-      if (!['NOT_ASSIGNED', 'CANCELLED'].includes(after.status) && (order.paymentData?.stockReviewRequired || order.orderStatus === 'cancelled' || order.razorpayOrderId && order.paymentStatus !== 'paid')) throw new DeliveryError('This order is not available for fulfillment', 409);
+      if (!['NOT_ASSIGNED', 'CANCELLED'].includes(after.status) && (order.paymentData?.stockReviewRequired || order.orderStatus === 'cancelled' || (order.razorpayOrderId || order.payuTxnId) && order.paymentStatus !== 'paid')) throw new DeliveryError('This order is not available for fulfillment', 409);
       if (!['NOT_ASSIGNED', 'CANCELLED'].includes(after.status) && (!after.providerId || !after.docketNumber)) throw new DeliveryError('Courier and docket number are required before assigning shipment status');
       const version = (existing?.version || 0) + 1;
       const updatedAt = new Date();

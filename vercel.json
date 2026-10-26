@@ -12,6 +12,7 @@
   "git": {
     "deploymentEnabled": {
       "main": true,
+      "codex/payu-sandbox": true,
       "*": false
     }
   }

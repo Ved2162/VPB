@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 import "./globals.css";
 import { Providers } from "@/lib/store";
 import { Navbar, Footer, CartDrawer, RevealInit } from "@/components/site";
-import RazorpayLoader from "@/lib/razorpay-client";
 import { RequestActivity } from '@/components/loading';
 
 export const metadata: Metadata = {
@@ -21,7 +20,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Navbar />
           <RequestActivity />
           <CartDrawer />
-          <RazorpayLoader />
           <main className="min-h-[60vh]">{children}</main>
           <Footer />
         </Providers>

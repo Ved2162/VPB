@@ -103,12 +103,30 @@ export const orders = pgTable("orders", {
   razorpayPaymentId: varchar("razorpay_payment_id", { length: 80 }),
   razorpaySignature: varchar("razorpay_signature", { length: 200 }),
   razorpayWebhookVerified: boolean("razorpay_webhook_verified").default(false),
+  checkoutKey: uuid('checkout_key').unique(),
+  payuTxnId: varchar('payu_txn_id', { length: 25 }).unique(),
+  payuPaymentId: varchar('payu_payment_id', { length: 80 }).unique(),
   paidAt: timestamp("paid_at"),
   paymentData: jsonb("payment_data").$type<Record<string, any>>().default({}),
   cartSnapshot: jsonb("cart_snapshot").$type<Array<{ id: string; qty: number }>>().default([]).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
+
+// Retain every attempt, including terminal failures and delayed callbacks.
+export const payuAttempts = pgTable('payu_attempts', {
+  txnId: varchar('txn_id', { length: 25 }).primaryKey(),
+  orderId: uuid('order_id').notNull().references(() => orders.id),
+  environment: varchar('environment', { length: 12 }).notNull(),
+  merchantKey: text('merchant_key').notNull(),
+  amount: integer('amount').notNull(), // paise, immutable
+  firstname: text('firstname').notNull(),
+  email: text('email').notNull(),
+  status: varchar('status', { length: 20 }).default('pending').notNull(),
+  paymentId: varchar('payment_id', { length: 80 }).unique(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  verifiedAt: timestamp('verified_at'),
+}, table => [index('payu_attempts_order_idx').on(table.orderId)]);
 
 // Short-lived checkout reservations do not alter stock until a captured payment.
 export const inventoryReservations = pgTable('inventory_reservations', {

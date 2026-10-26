@@ -1,3 +1,4 @@
+import { configureTestPayu } from './payu-fixtures';
 ﻿import { afterAll, beforeAll, expect, test, vi } from 'vitest';
 import { createHmac } from 'node:crypto';
 import { eq } from 'drizzle-orm';
@@ -36,6 +37,7 @@ async function signedEvent(data: object) {
   return webhook.POST(new Request('http://localhost/api/payment/webhook', { method: 'POST', body: raw, headers: { 'x-razorpay-signature': createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET!).update(raw).digest('hex') } }));
 }
 beforeAll(async () => {
+  configureTestPayu();
   process.env.JWT_SECRET = 'isolated-audit-jwt-secret-not-for-production';
   process.env.RAZORPAY_WEBHOOK_SECRET = 'isolated-audit-webhook-secret';
   process.env.MSG91_WHATSAPP_ENABLED = 'false';
@@ -70,14 +72,12 @@ test('a partial processed refund does not mark the full order refunded; duplicat
 });
 test('a cancelled order cannot be reopened for payment by the customer', async () => {
   const u = await user();
-  vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create: async () => ({ id: 'order_cancelled' }) } } as never);
   const [o] = await database.db.insert(schema.orders).values({ userId: u.id, orderNumber: 'AUDIT-CANCELLED', subtotal: 100, total: 100, paymentStatus: 'failed', orderStatus: 'cancelled', razorpayOrderId: 'order_cancelled' }).returning();
   expect((await retry.POST(request('/api/payment/retry', u, { orderId: o.id }))).status).toBe(409);
 });
 test('two customers cannot reserve the final reel in separate concurrent checkouts', async () => {
-  const a = await user(), b = await user(), p = await product(1); let created = 0;
-  vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create: async (data: object) => ({ ...data, id: 'order_stock_' + ++created }) } } as never);
-  const body = (u: typeof a) => ({ items: [{ id: p.id, qty: 1 }], address: { name: u.name, phone: u.phone, addressLine: 'Fixture street', city: 'Bareilly', state: 'UP', pincode: '243001' } });
+  const a = await user(), b = await user(), p = await product(1);
+  const body = (u: typeof a) => ({ idempotencyKey: u.id, email: 'fixture@example.com', items: [{ id: p.id, qty: 1 }], address: { name: u.name, phone: u.phone, addressLine: 'Fixture street', city: 'Bareilly', state: 'UP', pincode: '243001' } });
   const responses = await Promise.all([checkout.POST(request('/api/payment/create', a, body(a))), checkout.POST(request('/api/payment/create', b, body(b)))]);
   expect(responses.map(r => r.status).sort()).toEqual([200, 409]);
 });
@@ -125,7 +125,7 @@ import jwt from 'jsonwebtoken';
 import { readFile } from 'node:fs/promises';
 import { crc32 } from 'node:zlib';
 import * as ordersApi from '../src/app/api/orders/[id]/route';
-import * as failedApi from '../src/app/api/payment/failed/route';
+import { reconcilePayu } from '../src/lib/payu-payments';
 import { recordRefund } from '../src/lib/refunds';
 import { providerBody } from '../src/lib/msg91-diagnostics';
 
@@ -135,23 +135,23 @@ test('JWT claims are allowlisted even when a full database user is passed to sig
   for (const key of ['passwordHash', 'active', 'createdAt']) expect(payload).not.toHaveProperty(key);
 });
 test('repeat checkout renews its own reservation; failed payment releases it for another customer', async () => {
-  const a = await user(), b = await user(), p = await product(1); let n = 0;
-  vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create: async (data: object) => ({ ...data, id: 'order_reservation_' + ++n }) } } as never);
-  const body = (u: typeof a) => ({ items: [{ id: p.id, qty: 1 }], address: { name: u.name, phone: u.phone, addressLine: 'Fixture street', city: 'Bareilly', state: 'UP', pincode: '243001' } });
+  const a = await user(), b = await user(), p = await product(1);
+  const body = (u: typeof a) => ({ idempotencyKey: u.id, email: 'fixture@example.com', items: [{ id: p.id, qty: 1 }], address: { name: u.name, phone: u.phone, addressLine: 'Fixture street', city: 'Bareilly', state: 'UP', pincode: '243001' } });
   const first = await (await checkout.POST(request('/api/payment/create', a, body(a)))).json();
-  expect((await checkout.POST(request('/api/payment/create', a, body(a)))).status).toBe(200); expect(n).toBe(1);
+  expect((await checkout.POST(request('/api/payment/create', a, body(a)))).status).toBe(200); expect((await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, first.orderId))).length).toBe(1);
   expect((await checkout.POST(request('/api/payment/create', b, body(b)))).status).toBe(409);
-  expect((await failedApi.POST(request('/api/payment/failed', a, { razorpay_order_id: first.order.id }))).status).toBe(200);
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ status: 1, transaction_details: { [first.fields.txnid]: { txnid: first.fields.txnid, amt: '100.00', udf1: first.orderId, productinfo: 'VPB order', status: 'failure', unmappedstatus: 'failed' } } })));
+  await reconcilePayu(first.fields.txnid);
+  vi.unstubAllGlobals();
   expect((await checkout.POST(request('/api/payment/create', b, body(b)))).status).toBe(200);
 });
 test('expired reservations release stock and a late capture cannot take another active reservation', async () => {
-  const a = await user(), b = await user(), p = await product(1); let n = 0;
-  vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create: async (data: object) => ({ ...data, id: 'order_expiry_' + ++n }) } } as never);
-  const body = (u: typeof a) => ({ items: [{ id: p.id, qty: 1 }], address: { name: u.name, phone: u.phone, addressLine: 'Fixture street', city: 'Bareilly', state: 'UP', pincode: '243001' } });
+  const a = await user(), b = await user(), p = await product(1);
+  const body = (u: typeof a) => ({ idempotencyKey: u.id, email: 'fixture@example.com', items: [{ id: p.id, qty: 1 }], address: { name: u.name, phone: u.phone, addressLine: 'Fixture street', city: 'Bareilly', state: 'UP', pincode: '243001' } });
   const first = await (await checkout.POST(request('/api/payment/create', a, body(a)))).json();
   await database.db.update(schema.inventoryReservations).set({ expiresAt: new Date(0) }).where(eq(schema.inventoryReservations.productId, p.id));
   expect((await checkout.POST(request('/api/payment/create', b, body(b)))).status).toBe(200);
-  const settled = await finalizePayment({ orderId: first.order.id, paymentId: 'pay_expired', amount: 10000, currency: 'INR' });
+  const settled = await finalizePayment({ provider: 'payu', orderId: first.fields.txnid, paymentId: '123456789', amount: 10000, currency: 'INR' });
   expect(settled.order).toMatchObject({ paymentStatus: 'paid', orderStatus: 'placed' });
   expect(settled.order.paymentData?.stockReviewRequired).toBe(true);
   expect((await database.db.select().from(schema.products).where(eq(schema.products.id, p.id)))[0].stockQuantity).toBe(1);

@@ -1,6 +1,6 @@
 # Security and production setup
 
-The application uses Next.js App Router, Node.js APIs, Drizzle and PostgreSQL. Supabase client access, AiSensy and browser database keys are not present. Administrator image uploads are stored in PostgreSQL and served by the public image endpoint. Private integration credentials must remain in server-side environment variables. The public Razorpay key ID is returned only for its checkout SDK; signing secrets are never returned.
+The application uses Next.js App Router, Node.js APIs, Drizzle and PostgreSQL. Supabase client access, AiSensy and browser database keys are not present. Administrator image uploads are stored in PostgreSQL and served by the public image endpoint. Private integration credentials must remain in server-side environment variables. PayU returns only the merchant key and per-attempt signed form fields to the browser; the merchant salt remains server-side. Historical Razorpay verification remains available. See [PayU migration and approvals](payu-migration.md).
 
 ## Controls
 
@@ -42,14 +42,20 @@ Required environment variable names:
 
 - DATABASE_URL
 - JWT_SECRET
-- RAZORPAY_KEY_ID
+- PAYU_ENABLED (disabled until approved)
+- PAYU_ENV
+- PAYU_CURRENCY
+- PAYU_MERCHANT_KEY
+- PAYU_MERCHANT_SALT
+- PAYU_BASE_URL
+- RAZORPAY_KEY_ID (historical transactions)
 - RAZORPAY_KEY_SECRET
 - RAZORPAY_WEBHOOK_SECRET
 - RENFLAIR_API_KEY
 
-Do not enable ALLOW_SEED or configure seed account variables for a normal production deployment. JWT_SECRET must be a strong random value of at least 32 characters. Configure separate preview/test credentials and databases, verify pooled database capacity and function-region latency, and configure the official domain and HTTPS webhook endpoint `/api/payment/webhook` in Razorpay. Ensure the provider captures payments and the SMS sender/template is approved. Verify webhook delivery, captures, cancellation, retries and refunds in staging before using live funds. Never expose a development server publicly.
+Do not enable ALLOW_SEED or configure seed account variables for a normal production deployment. JWT_SECRET must be a strong random value of at least 32 characters. Configure separate preview/test credentials and databases, verify pooled database capacity and function-region latency, and configure the official domain and HTTPS webhook endpoint `/api/payment/webhook` for historical Razorpay events. Configure PayU URLs separately as described in [the migration guide](payu-migration.md). Ensure the provider captures payments and the SMS sender/template is approved. Verify webhook delivery, captures, cancellation, retries and refunds in staging before using live funds. Never expose a development server publicly.
 
-The repository is connected to Vercel. `vercel.json` enables automatic Git deployments for `main` and disables other branches. The explicit `main: true` rule takes precedence when it also matches the wildcard denial. Preview variables are not configured; provision separate preview credentials and a test database before enabling preview branches. Production must use the restricted application database login. Manual CLI/dashboard deployments are not blocked by this setting and require authorization. See [Vercel Git configuration](https://vercel.com/docs/project-configuration/git-configuration#branches-matching-multiple-rules).
+The repository is connected to Vercel. `vercel.json` enables automatic Git deployments for `main` and `codex/payu-sandbox` (Preview), and disables other branches. The explicit `main: true` rule takes precedence when it also matches the wildcard denial. Preview variables are not configured; provision separate preview credentials and a test database before enabling preview branches. Production must use the restricted application database login. Manual CLI/dashboard deployments are not blocked by this setting and require authorization. See [Vercel Git configuration](https://vercel.com/docs/project-configuration/git-configuration#branches-matching-multiple-rules).
 
 Dashboard configuration, real SMS delivery and live payment acceptance require operator validation; successful local tests do not prove them. Automatic email password reset is unavailable; the UI provides truthful OTP/support alternatives.
 

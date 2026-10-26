@@ -1,3 +1,4 @@
+import { configureTestPayu } from './payu-fixtures';
 import { beforeAll, afterAll, test, expect, vi } from 'vitest';
 import { createTestDatabase } from './database';
 import * as schema from '../src/db/schema';
@@ -27,6 +28,7 @@ async function seedOtp(phone: string) {
   return (await database.db.insert(schema.otpRequests).values({ phone, otpHash: await bcrypt.hash(code, 4), expiresAt: new Date(Date.now() + 60000) }).returning())[0];
 }
 beforeAll(async () => {
+  configureTestPayu();
   process.env.JWT_SECRET = 'isolated-security-test-secret-never-production';
   process.env.RAZORPAY_WEBHOOK_SECRET = 'isolated-webhook-secret';
   process.env.RENFLAIR_API_KEY = '';
@@ -96,28 +98,23 @@ test('negative/fractional/duplicate cart quantities are rejected before contacti
 });
 test('identical checkout requests reuse one order and a changed address gets a separate order', async () => {
   const [product] = await database.db.insert(schema.products).values({ name: 'Test manjha', slug: 'audit-manjha', sku: 'AUDIT-MANJHA', price: 100, stockQuantity: 10 }).returning();
-  let created = 0;
-  vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create: async (data: { amount: number }) => ({ ...data, id: 'order_audit_' + ++created, currency: 'INR' }) } } as any);
   const address = { name: 'Customer', phone: customer.phone, addressLine: 'Test street', city: 'Bareilly', state: 'UP', pincode: '243001' };
-  const body = { items: [{ id: product.id, qty: 1 }], address };
+  const body = { idempotencyKey: crypto.randomUUID(), email: 'fixture@example.com', items: [{ id: product.id, qty: 1 }], address };
   const a = await checkout.POST(request('/api/payment/create', body, customer)), b = await checkout.POST(request('/api/payment/create', body, customer));
-  expect(a.status).toBe(200); expect(b.status).toBe(200); expect(created).toBe(1);
-  expect((await checkout.POST(request('/api/payment/create', { ...body, address: { ...address, addressLine: 'Different street' } }, customer))).status).toBe(200);
-  expect(created).toBe(2);
+  expect(a.status).toBe(200); expect(b.status).toBe(200); expect((await a.clone().json()).fields.txnid).toBe((await b.clone().json()).fields.txnid);
+  expect((await checkout.POST(request('/api/payment/create', { ...body, idempotencyKey: crypto.randomUUID(), address: { ...address, addressLine: 'Different street' } }, customer))).status).toBe(200);
+  expect((await database.db.select().from(schema.orders).where(eq(schema.orders.userId, customer.id))).length).toBe(2);
 });
 test.each([100, 5999, 6000, 6200])('checkout charges no shipping at a subtotal of %i and keeps the existing discount', async (price) => {
   const [buyer] = await database.db.insert(schema.users).values({ name: 'Shipping fixture', phone: '950000' + String(price).padStart(4, '0'), passwordHash: 'test-only', role: 'customer' }).returning();
   const [product] = await database.db.insert(schema.products).values({ name: 'Free shipping fixture', slug: 'free-shipping-' + price, sku: 'FREE-SHIP-' + price, price, stockQuantity: 10 }).returning();
-  const create = vi.fn(async (data: { amount: number }) => ({ ...data, id: 'order_free_shipping_' + price, currency: 'INR' }));
-  vi.spyOn(gateway, 'getRazorpay').mockReturnValue({ orders: { create } } as never);
   const address = { name: 'Customer', phone: customer.phone, addressLine: 'Test street', city: 'Bareilly', state: 'UP', pincode: '243001' };
-  const response = await checkout.POST(request('/api/payment/create', { items: [{ id: product.id, qty: 1 }], address, shippingCharge: 99, total: 1 }, buyer));
+  const response = await checkout.POST(request('/api/payment/create', { idempotencyKey: crypto.randomUUID(), email: 'fixture@example.com', items: [{ id: product.id, qty: 1 }], address, shippingCharge: 99, total: 1 }, buyer));
   expect(response.status).toBe(200);
   const discount = price >= 6000 ? 200 : 0;
   const result = await response.json();
-  expect(result.order.amount).toBe((price - discount) * 100);
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({ amount: (price - discount) * 100 }));
-  const [order] = await database.db.select().from(schema.orders).where(eq(schema.orders.razorpayOrderId, result.order.id));
+  expect(result.fields.amount).toBe((price - discount).toFixed(2));
+  const [order] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, result.orderId));
   expect(order).toMatchObject({ subtotal: price, shippingCharge: 0, discount, total: price - discount });
 });
 
