@@ -12,7 +12,7 @@ import { scheduleOrderNotification } from './schedule-order-notification';
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Order = typeof orders.$inferSelect;
 
-// Caller holds the user and order locks. A pending attempt is ALWAYS reused.
+// Caller holds the user and order locks. Verified pending attempts only return status recovery.
 export async function preparePayuCheckout(tx: Transaction, order: Order, email: unknown) {
   const config = payuConfig(true);
   if (order.razorpayOrderId) throw new DeliveryError('This historical Razorpay order requires support before retrying.', 409);

@@ -61,7 +61,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if ((before.razorpayOrderId || before.payuTxnId) && body.paymentStatus !== undefined && body.paymentStatus !== before.paymentStatus) throw new DeliveryError('Payment status is managed by the verified payment gateway', 409);
     if (body.orderStatus === 'confirmed' && before.paymentData?.stockReviewRequired) {
       if (!(before.razorpayOrderId && before.razorpayPaymentId || before.payuTxnId && before.payuPaymentId)) throw new DeliveryError('Payment needs manual reconciliation', 409);
-      await finalizePayment({ provider: before.payuTxnId ? 'payu' : 'razorpay', orderId: (before.payuTxnId || before.razorpayOrderId)!, paymentId: (before.payuPaymentId || before.razorpayPaymentId)!, amount: before.total * 100, currency: 'INR', reconciledBy: me.id });
+      await finalizePayment({ provider: before.payuTxnId ? 'payu' : 'historical', orderId: (before.payuTxnId || before.razorpayOrderId)!, paymentId: (before.payuPaymentId || before.razorpayPaymentId)!, amount: before.total * 100, currency: 'INR', reconciledBy: me.id });
       scheduleOrderNotification(before.id);
     }
     return await db.transaction(async tx => {

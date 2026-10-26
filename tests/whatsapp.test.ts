@@ -5,7 +5,9 @@ import * as schema from '../src/db/schema';
 const state = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock('@/db', () => ({ get db() { return state.db; } }));
 vi.mock('@/lib/schedule-order-notification', () => ({ scheduleOrderNotification: vi.fn() }));
-import { finalizePayment } from '../src/lib/payment-finalization';
+import { finalizePayment as finalizeRecordedPayment } from '../src/lib/payment-finalization';
+import { finalizeFixturePayment } from './payment-fixture';
+const finalizePayment = (confirmation: Parameters<typeof finalizeRecordedPayment>[0]) => finalizeFixturePayment(database.db, confirmation);
 import { processOrderNotifications, safelyProcessOrderNotifications } from '../src/lib/order-notifications';
 import { indianWhatsAppNumber, msg91Config, templatePayload } from '../src/lib/msg91';
 import * as msg91 from '../src/lib/msg91';
@@ -14,8 +16,6 @@ import * as adminRoute from '../src/app/api/admin/notifications/route';
 import * as webhook from '../src/app/api/payment/webhook/route';
 import * as checkout from '../src/app/api/payment/create/route';
 import * as verifyPayment from '../src/app/api/payment/verify/route';
-import * as gateway from '../src/lib/razorpay';
-import { createHmac } from 'node:crypto';
 import { signToken } from '../src/lib/auth';
 let database: Awaited<ReturnType<typeof createTestDatabase>>;
 let customer: typeof schema.users.$inferSelect, admin: typeof customer;
@@ -37,7 +37,6 @@ beforeEach(() => {
   vi.stubEnv('MSG91_TEMPLATE_BODY_VARIABLES', 'customer_name,order_id,order_date,total_amount,confirmation_message,payment_status');
   vi.stubEnv('MSG91_TEMPLATE_AMOUNT_FORMAT', 'currency');
   vi.stubEnv('JWT_SECRET', 'isolated-whatsapp-test-secret-never-production');
-  vi.stubEnv('RAZORPAY_WEBHOOK_SECRET', 'isolated-webhook-test-secret');
   transport.mockReset().mockImplementation(async () => Response.json({ status: 'success', request_id: 'test-request-id' }));
   vi.stubGlobal('fetch', transport);
 });
@@ -78,24 +77,12 @@ test('unconfigured PayU cannot create orders or queue confirmation', async () =>
   expect((await database.db.select().from(schema.orderNotifications)).length).toBe(notificationsBefore);
   expect(transport).not.toHaveBeenCalled();
 });
-test('checkout callback queues only after server capture verification; callback retries do not resend', async () => {
-  const order = await pending();
-  vi.stubEnv('RAZORPAY_KEY_SECRET', 'isolated-payment-test-secret');
-  const paymentId = 'pay_callback';
-  const signature = createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!).update(order.razorpayOrderId + '|' + paymentId).digest('hex');
-  const request = () => new Request('http://localhost/api/payment/verify', { method: 'POST', headers: { cookie: 'vpb_token=' + signToken(customer) },
-    body: JSON.stringify({ razorpay_order_id: order.razorpayOrderId, razorpay_payment_id: paymentId, razorpay_signature: signature }) });
-  const captured = { id: paymentId, order_id: order.razorpayOrderId, status: 'captured', amount: 12300, currency: 'INR', method: 'upi' } as Awaited<ReturnType<typeof gateway.fetchGatewayPayment>>;
-  const fetchPayment = vi.spyOn(gateway, 'fetchGatewayPayment').mockResolvedValueOnce({ ...captured, status: 'authorized' }).mockResolvedValue(captured);
-  expect((await verifyPayment.POST(request())).status).toBe(409);
-  expect(await notification(order.id)).toBeUndefined();
-  expect((await verifyPayment.POST(request())).status).toBe(200);
-  expect((await verifyPayment.POST(request())).status).toBe(200);
-  expect(fetchPayment).toHaveBeenCalledTimes(2);
-  expect(transport).not.toHaveBeenCalled();
-  await processOrderNotifications(order.id); await processOrderNotifications(order.id);
-  expect(transport).toHaveBeenCalledTimes(1);
-});
+test('retired checkout verification cannot queue a confirmation', async () => {
+    const order = await pending();
+    expect((await verifyPayment.POST()).status).toBe(410);
+    expect(await notification(order.id)).toBeUndefined();
+    expect(transport).not.toHaveBeenCalled();
+  });
 test('verified payment creates one durable row; concurrent workers and payment retries send once', async () => {
   const order = await pending(); await confirm(order); await confirm(order);
   await Promise.all([processOrderNotifications(order.id), processOrderNotifications(order.id)]);
@@ -227,16 +214,12 @@ test('refunded or cancelled orders are rechecked before dispatch', async () => {
   }
   expect(transport).not.toHaveBeenCalled();
 });
-test('signed webhook authorization/failure never queue; repeated captured webhooks queue once', async () => {
-  const order = await pending();
-  for (const event of ['payment.authorized', 'payment.failed', 'payment.captured', 'payment.captured']) {
-    const raw = JSON.stringify({ event, payload: { payment: { entity: { order_id: order.razorpayOrderId, id: 'pay_webhook', amount: 12300, currency: 'INR' } } } });
-    const signature = createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET!).update(raw).digest('hex');
-    expect((await webhook.POST(new Request('http://localhost/api/payment/webhook', { method: 'POST', body: raw, headers: { 'x-razorpay-signature': signature } }))).status).toBe(200);
-    if (event !== 'payment.captured') expect(await notification(order.id)).toBeUndefined();
-  }
-  await processOrderNotifications(order.id); expect(transport).toHaveBeenCalledTimes(1);
-});
+test('retired gateway webhooks never queue or send confirmations', async () => {
+    const order = await pending();
+    for (let i = 0; i < 3; i++) expect((await webhook.POST()).status).toBe(410);
+    expect(await notification(order.id)).toBeUndefined();
+    await processOrderNotifications(order.id); expect(transport).not.toHaveBeenCalled();
+  });
 test('worker requires its own strong credential', async () => {
   vi.stubEnv('CRON_SECRET', 'test-worker-secret-with-at-least-32-characters');
   expect((await worker.GET(new Request('http://localhost/api/internal/whatsapp'))).status).toBe(401);

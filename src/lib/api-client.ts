@@ -10,7 +10,7 @@ export const activityStore = {
 };
 function publish(value: readonly ApiActivity[]) { activities = value; listeners.forEach(listener => listener()); }
 function labelFor(path: string, method: string) {
-  if (path.includes('/payment/verify')) return 'Confirming your payment…';
+  if (path.includes('/payment/payu/verify')) return 'Confirming your payment…';
   if (path.includes('/payment')) return 'Preparing secure checkout…';
   if (path.includes('/otp/send')) return 'Sending your secure code...';
   if (path.includes('/otp')) return 'Verifying your account…';

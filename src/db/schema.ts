@@ -95,7 +95,7 @@ export const orders = pgTable("orders", {
   trackingNumber: varchar("tracking_number", { length: 80 }),
   courier: varchar("courier", { length: 80 }),
   shippingAddress: jsonb("shipping_address").$type<Record<string, string>>().default({}).notNull(),
-  paymentMethod: varchar("payment_method", { length: 40 }).default("razorpay").notNull(),
+  paymentMethod: varchar("payment_method", { length: 40 }).default("payu").notNull(),
   customerName: varchar("customer_name", { length: 120 }),
   customerEmail: varchar("customer_email", { length: 180 }),
   customerPhone: varchar("customer_phone", { length: 20 }),

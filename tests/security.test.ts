@@ -4,7 +4,6 @@ import { createTestDatabase } from './database';
 import * as schema from '../src/db/schema';
 import { eq } from 'drizzle-orm';
 import bcrypt from 'bcryptjs';
-import { createHmac } from 'node:crypto';
 import { signToken, verifyToken } from '../src/lib/auth';
 import { sameOrigin } from '../src/lib/shipment-rules';
 import { readJson, safeReturnPath } from '../src/lib/http-security';
@@ -16,8 +15,9 @@ import * as customerAuth from '../src/app/api/auth/route';
 import * as extra from '../src/app/api/extra/route';
 import * as checkout from '../src/app/api/payment/create/route';
 import * as webhook from '../src/app/api/payment/webhook/route';
-import { finalizePayment } from '../src/lib/payment-finalization';
-import * as gateway from '../src/lib/razorpay';
+import { finalizePayment as finalizeRecordedPayment } from '../src/lib/payment-finalization';
+import { finalizeFixturePayment } from './payment-fixture';
+const finalizePayment = (confirmation: Parameters<typeof finalizeRecordedPayment>[0]) => finalizeFixturePayment(database.db, confirmation);
 let database: Awaited<ReturnType<typeof createTestDatabase>>;
 let customer: typeof schema.users.$inferSelect, other: typeof customer, admin: typeof customer;
 const code = '123456'; // Disposable test OTP only.
@@ -30,7 +30,6 @@ async function seedOtp(phone: string) {
 beforeAll(async () => {
   configureTestPayu();
   process.env.JWT_SECRET = 'isolated-security-test-secret-never-production';
-  process.env.RAZORPAY_WEBHOOK_SECRET = 'isolated-webhook-secret';
   process.env.RENFLAIR_API_KEY = '';
   database = await createTestDatabase(); state.db = database.db;
   [customer, other, admin] = await database.db.insert(schema.users).values([
@@ -133,15 +132,11 @@ test('captured payment finalization is idempotent and validates amount', async (
   expect((await database.db.select().from(schema.products).where(eq(schema.products.id, product.id)))[0].stockQuantity).toBe(8);
   expect((await database.db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, order.id))).length).toBe(1);
 });
-test('webhooks require authentic signatures; authorization alone does not mark an order paid', async () => {
-  await database.db.insert(schema.orders).values({ userId: customer.id, orderNumber: 'AUDIT-AUTHORIZED', subtotal: 100, total: 100, razorpayOrderId: 'order_authorized' });
-  const event = { event: 'payment.authorized', payload: { payment: { entity: { id: 'pay_authorized', order_id: 'order_authorized', amount: 10000, currency: 'INR' } } } };
-  const raw = JSON.stringify(event);
-  expect((await webhook.POST(new Request('http://localhost/api/payment/webhook', { method: 'POST', body: raw }))).status).toBe(400);
-  const signature = createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET!).update(raw).digest('hex');
-  expect((await webhook.POST(new Request('http://localhost/api/payment/webhook', { method: 'POST', body: raw, headers: { 'x-razorpay-signature': signature } }))).status).toBe(200);
-  expect((await database.db.select().from(schema.orders).where(eq(schema.orders.razorpayOrderId, 'order_authorized')))[0].paymentStatus).toBe('pending');
-});
+test('retired gateway webhooks cannot mark historical orders paid', async () => {
+    const [order] = await database.db.insert(schema.orders).values({ userId: customer.id, orderNumber: 'AUDIT-RETIRED', subtotal: 100, total: 100, razorpayOrderId: 'order_retired' }).returning();
+    for (const event of ['payment.authorized', 'payment.captured']) expect((await webhook.POST()).status).toBe(410);
+    expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, order.id)))[0].paymentStatus).toBe('pending');
+  });
 
 test('legacy registration cannot create an unverified phone account or accept a supplied role', async () => {
   const response = await customerAuth.POST(request('/api/auth', { action: 'register', name: 'Unverified', phone: '9400000009', password: 'Test-only-password-2026', role: 'admin' }));

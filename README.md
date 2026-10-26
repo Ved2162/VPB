@@ -1,6 +1,6 @@
 # VPB — Verai Patang Bhandar
 
-A full-stack e-commerce web application for **VPB — Verai Patang Bhandar**, a premium Bareilly manjha and kite shop. Built with Next.js, PostgreSQL, Drizzle ORM, and PayU (with historical Razorpay support).
+A full-stack e-commerce web application for **VPB — Verai Patang Bhandar**, a premium Bareilly manjha and kite shop. Built with Next.js, PostgreSQL, Drizzle ORM, and PayU (with historical transaction records).
 
 ---
 
@@ -14,7 +14,7 @@ A full-stack e-commerce web application for **VPB — Verai Patang Bhandar**, a 
 | Database | PostgreSQL (Neon / any PG host) |
 | ORM | Drizzle ORM |
 | Authentication | JWT (httpOnly cookies) |
-| Payments | PayU India Hosted Checkout; historical Razorpay reconciliation |
+| Payments | PayU India Hosted Checkout; historical payment records |
 | Deployment | Vercel |
 
 ---
@@ -53,7 +53,7 @@ vpb/
 │   │   │   ├── orders/       # Order read + admin patch
 │   │   │   ├── extra/        # Addresses, reviews, pincode
 │   │   │   ├── admin/        # Admin CRUD (protected)
-│   │   │   ├── payment/      # PayU create/retry/return/webhook/verify + legacy Razorpay
+│   │   │   ├── payment/      # PayU create/retry/return/webhook/verify + retired legacy endpoints
 │   │   │   ├── seed/         # Database seeder
 │   │   │   └── health/       # Health check
 │   │   ├── shop/             # Shop listing page
@@ -71,7 +71,6 @@ vpb/
 │   │   └── schema.ts         # All table definitions
 │   └── lib/
 │       ├── auth.ts           # JWT helpers, password hashing
-│       ├── razorpay.ts       # Historical Razorpay verification/refunds
 │       ├── store.tsx         # React context (cart, auth, toast)
 │       └── data.ts           # Static constants
 ├── public/
@@ -141,9 +140,6 @@ Copy `.env.example` to `.env` and configure required values. PayU variables and 
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `JWT_SECRET` | Secret for signing JWT tokens (min 32 chars, random) |
-| `RAZORPAY_KEY_ID` | Razorpay API Key ID (from dashboard) Historical transactions only; retain until reconciliation is complete. |
-| `RAZORPAY_KEY_SECRET` | Razorpay API Key Secret (server-side only) Historical transactions only; retain until reconciliation is complete. |
-| `RAZORPAY_WEBHOOK_SECRET` | Razorpay webhook secret (from dashboard) Historical transactions only; retain until reconciliation is complete. |
 | `SEED_ADMIN_EMAIL` | (Optional) Admin email for seed script |
 | `SEED_ADMIN_PASSWORD` | (Optional) Admin password for seed script |
 
@@ -206,7 +202,7 @@ Deploy only after explicit approval and the PayU staging checklist. Vercel build
 
 ### 5. Configure payments only after approval
 
-Follow [PayU configuration, webhook URLs, sandbox evidence and controlled cutover](docs/payu-migration.md). Keep new checkout disabled until staging is verified. Preserve historical Razorpay credentials and `/api/payment/webhook`. A push to `main` can trigger Vercel deployment; approval is required before commit, push or deployment.
+Follow [PayU configuration, webhook URLs, sandbox evidence and controlled cutover](docs/payu-migration.md). Keep new checkout disabled until staging is verified. The retired gateway URLs return HTTP 410; preserve historical database records. A push to `main` can trigger Vercel deployment; approval is required before commit, push or deployment.
 
 ---
 
@@ -236,7 +232,7 @@ Follow [PayU configuration, webhook URLs, sandbox evidence and controlled cutove
 - Customer can only access their own orders and addresses
 - Password hashing: bcrypt (10 rounds)
 - JWT secret must be set via environment variable — app throws at startup if missing
-- `PAYU_MERCHANT_SALT` and historical `RAZORPAY_KEY_SECRET` remain server-side only — never exposed to the browser
+- `PAYU_MERCHANT_SALT` remains server-side only — never exposed to the browser
 - No credentials are hardcoded in source code
 
 ---

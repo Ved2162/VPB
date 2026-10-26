@@ -28,5 +28,6 @@ export async function createTestDatabase(beforeMigration?: (pg: PGlite) => Promi
   await pg.exec(await readFile(new URL('../migrations/0008_session_revocation.sql', import.meta.url), 'utf8'));
   await pg.exec(await readFile(new URL('../migrations/0009_inventory_reservations.sql', import.meta.url), 'utf8'));
   await pg.exec(await readFile(new URL('../migrations/0010_payu.sql', import.meta.url), 'utf8'));
+  await pg.exec(await readFile(new URL('../migrations/0011_payu_only_default.sql', import.meta.url), 'utf8'));
   return { pg, db: drizzle(pg) };
 }

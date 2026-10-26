@@ -245,9 +245,9 @@ export default function Admin() {
                     <span className={`pill ${selOrder.paymentStatus === "paid" ? "bg-green-100 text-green-800" : selOrder.paymentStatus === "failed" ? "bg-red-100 text-red-800" : selOrder.paymentStatus === "refunded" ? "bg-purple-100 text-purple-800" : "bg-amber-100 text-amber-800"}`}>Payment: {selOrder.paymentStatus}</span>
                     {selOrder.payuTxnId && <span className="pill bg-stone-100 font-mono text-stone-600">PayU txn: {selOrder.payuTxnId}</span>}
                     {selOrder.payuPaymentId && <span className="pill bg-stone-100 font-mono text-stone-600">PayU payment: {selOrder.payuPaymentId}</span>}
-                    {selOrder.razorpayOrderId && <span className="pill bg-stone-100 font-mono text-stone-600">rzp: {selOrder.razorpayOrderId}</span>}
-                    {selOrder.razorpayPaymentId && <span className="pill bg-stone-100 font-mono text-stone-600">pay: {selOrder.razorpayPaymentId}</span>}
-                    {selOrder.razorpayWebhookVerified && <span className="pill bg-emerald-50 text-emerald-800">Webhook verified</span>}
+                    {selOrder.razorpayOrderId && <span className="pill bg-stone-100 font-mono text-stone-600">Historical order: {selOrder.razorpayOrderId}</span>}
+                    {selOrder.razorpayPaymentId && <span className="pill bg-stone-100 font-mono text-stone-600">Historical payment: {selOrder.razorpayPaymentId}</span>}
+                    {selOrder.razorpayWebhookVerified && <span className="pill bg-emerald-50 text-emerald-800">Historical verification recorded</span>}
                   </div>
                   <div className="mt-2 space-y-1.5 text-sm">{(selOrder.items || []).map((it: any) => (<div key={it.id} className="flex justify-between"><span>{it.productName} × {it.quantity}</span><b>{money(it.price * it.quantity)}</b></div>))}</div>
                   {selOrder.paymentData?.stockReviewRequired && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Stock review required. Update inventory, choose confirmed, then save to allocate stock and release this order.</p>}

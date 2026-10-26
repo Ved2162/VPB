@@ -2,7 +2,7 @@
 
 ## Architecture
 
-The existing Next.js/Drizzle/PostgreSQL checkout now prepares PayU Hosted Checkout; historical Razorpay verification remains. See [PayU migration](payu-migration.md). Payment initiation saves a pending order using database prices and the active authenticated user's registered phone. It does **not** send confirmation. PayU response hashes and server verification bind captured state to the stored payment attempt; signed payment webhooks use the same `finalizePayment`. Legacy Razorpay captures still use their existing handlers.
+The existing Next.js/Drizzle/PostgreSQL checkout now prepares PayU Hosted Checkout; historical payment records remain accessible and legacy gateway processing endpoints are retired. See [PayU migration](payu-migration.md). Payment initiation saves a pending order using database prices and the active authenticated user's registered phone. It does **not** send confirmation. PayU response hashes and server verification bind captured state to the stored payment attempt; signed payment webhooks use the same `finalizePayment`. Legacy gateway endpoints return HTTP 410 and cannot queue a new confirmation.
 
 Finalization atomically inserts one `order_notifications` row with the verified paid order. Only a newly confirmed payment queues a notification; there is no historical backfill. Duplicate verification/webhooks cannot queue another row. After commit, Next.js `after()` processes the row without delaying the HTTP response. A scheduler recovers pending rows if the response task is interrupted. Notification retries never create orders or rerun payment finalization.
 

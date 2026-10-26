@@ -1,9 +1,8 @@
+import { configureTestPayu } from './payu-fixtures';
 import { beforeAll, afterAll, describe, expect, test, vi } from 'vitest';
 import { createTestDatabase } from './database';
 import * as schema from '../src/db/schema';
 import { eq } from 'drizzle-orm';
-import { createHmac } from 'node:crypto';
-import * as gateway from '../src/lib/razorpay';
 import { hashPassword, signToken } from '../src/lib/auth';
 import { trackingUrl, validateTransition, SHIPMENT_STATUSES } from '../src/lib/shipment-rules';
 
@@ -16,8 +15,7 @@ import * as shipment from '../src/app/api/delivery/shipments/[id]/route';
 import * as orderDetail from '../src/app/api/orders/[id]/route';
 import * as adminApi from '../src/app/api/admin/route';
 import * as createPayment from '../src/app/api/payment/create/route';
-import * as verifyPayment from '../src/app/api/payment/verify/route';
-import * as failedPayment from '../src/app/api/payment/failed/route';
+import * as verifyPayment from '../src/app/api/payment/payu/verify/route';
 import * as retryPayment from '../src/app/api/payment/retry/route';
 import * as seed from '../src/app/api/seed/route';
 import * as productsApi from '../src/app/api/products/route';
@@ -39,8 +37,8 @@ async function patch(body: object, actor: { id: string; name: string; phone: str
 async function version() { return (await database.db.select().from(schema.shipments).where(eq(schema.shipments.orderId, order.id)))[0]?.version || 0; }
 
 beforeAll(async () => {
+  configureTestPayu();
   process.env.JWT_SECRET = 'isolated-test-jwt-secret-never-used-in-production';
-  process.env.RAZORPAY_KEY_SECRET = 'isolated-razorpay-secret';
   database = await createTestDatabase(); state.db = database.db;
   const passwordHash = await hashPassword(password);
   [admin, customer, other] = await database.db.insert(schema.users).values([
@@ -132,7 +130,7 @@ describe('Real PostgreSQL delivery workflow', () => {
     expect((await settings.POST(request(staffUser(), '/api/delivery/settings', { resource: 'staff' }))).status).toBe(403);
     expect((await orderDetail.PATCH(request(staffUser(), '/api/orders/' + order.id, { paymentStatus: 'paid' }, 'PATCH'), context())).status).toBe(403);
     expect((await seed.POST(request(staffUser(), '/api/seed', {}))).status).toBe(403);
-    for (const handler of [createPayment.POST, verifyPayment.POST, failedPayment.POST, retryPayment.POST]) expect((await handler(request(staffUser(), '/api/payment/test', {}))).status).toBe(403);
+    for (const handler of [createPayment.POST, verifyPayment.POST, retryPayment.POST]) expect((await handler(request(staffUser(), '/api/payment/test', {}))).status).toBe(403);
   });
   test('shared access and revocation are controlled by admin, including old JWTs', async () => {
     await settings.POST(request(admin, '/api/delivery/settings', { resource: 'staff', ...staff, allOrders: true }));
@@ -166,18 +164,22 @@ describe('Real PostgreSQL delivery workflow', () => {
     for (let n = 0; n < 11; n++) response = await login.POST(request(null, '/api/delivery/login', { phone: '9000000999', password: 'wrong-password' }));
     expect(response.status).toBe(429);
   });
-  test('product management, checkout validation and payment verification retain working behavior', async () => {
+  test('product management and PayU verification retain working behavior', async () => {
     const product = await adminApi.POST(request(admin, '/api/admin', { res: 'product', data: { name: 'Regression manjha', price: 100, sku: 'REG-MANJHA', stockQuantity: 10, active: true } })); expect(product.status).toBe(200);
     expect((await (await productsApi.GET(request(null, '/api/products?q=Regression'))).json()).products.length).toBe(1);
     expect((await createPayment.POST(request(customer, '/api/payment/create', { items: [] }))).status).toBe(400);
-    const [pending] = await database.db.insert(schema.orders).values({ userId: customer.id, orderNumber: 'TEST-PAY', subtotal: 100, total: 100, razorpayOrderId: 'order_test_123', cartSnapshot: [] }).returning();
-    vi.spyOn(gateway, 'fetchGatewayPayment').mockResolvedValue({ id: 'pay_test_123', order_id: 'order_test_123', amount: 10000, currency: 'INR', status: 'captured', method: 'upi' } as any);
-    const body = { razorpay_order_id: 'order_test_123', razorpay_payment_id: 'pay_test_123', razorpay_signature: createHmac('sha256', process.env.RAZORPAY_KEY_SECRET!).update('order_test_123|pay_test_123').digest('hex') };
-    expect((await verifyPayment.POST(request(other, '/api/payment/verify', body))).status).toBe(404);
-    expect((await verifyPayment.POST(request(customer, '/api/payment/verify', { ...body, razorpay_signature: 'bad' }))).status).toBe(400);
-    expect((await verifyPayment.POST(request(customer, '/api/payment/verify', body))).status).toBe(200);
-    expect((await verifyPayment.POST(request(customer, '/api/payment/verify', body))).status).toBe(200);
+    const txnId = 'd'.repeat(24);
+    const [pending] = await database.db.insert(schema.orders).values({ userId: customer.id, orderNumber: 'TEST-PAY', subtotal: 100, total: 100, payuTxnId: txnId, cartSnapshot: [] }).returning();
+    await database.db.insert(schema.payuAttempts).values({ txnId, orderId: pending.id, environment: 'test', merchantKey: 'unit-test-key', amount: 10000, firstname: 'Fixture', email: 'fixture@example.com' });
+    let amount = '1.00';
+    vi.stubGlobal('fetch', vi.fn(async () => Response.json({ status: 1, transaction_details: { [txnId]: { txnid: txnId, mihpayid: '123456789', amt: amount, udf1: pending.id, productinfo: 'VPB order', status: 'success', unmappedstatus: 'captured' } } })));
+    expect((await verifyPayment.POST(request(other, '/api/payment/payu/verify', { orderId: pending.id }))).status).toBe(404);
+    expect((await verifyPayment.POST(request(customer, '/api/payment/payu/verify', { orderId: pending.id }))).status).toBe(400);
+    amount = '100.00';
+    expect((await verifyPayment.POST(request(customer, '/api/payment/payu/verify', { orderId: pending.id }))).status).toBe(200);
+    expect((await verifyPayment.POST(request(customer, '/api/payment/payu/verify', { orderId: pending.id }))).status).toBe(200);
     expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, pending.id)))[0].paymentStatus).toBe('paid');
+    vi.unstubAllGlobals();
     expect((await adminApi.GET(request(admin, '/api/admin?res=stats'))).status).toBe(200);
   });
   test('only admin can delete staff; assignments are released and history is retained', async () => {

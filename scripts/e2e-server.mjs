@@ -34,6 +34,7 @@ await pg.exec(await readFile(new URL('../migrations/0001_delivery.sql', import.m
   await pg.exec(await readFile(new URL('../migrations/0008_session_revocation.sql', import.meta.url), 'utf8'));
   await pg.exec(await readFile(new URL('../migrations/0009_inventory_reservations.sql', import.meta.url), 'utf8'));
 await pg.exec(await readFile(new URL('../migrations/0010_payu.sql', import.meta.url), 'utf8'));
+  await pg.exec(await readFile(new URL('../migrations/0011_payu_only_default.sql', import.meta.url), 'utf8'));
 const passwordHash = await bcrypt.hash('E2e-only-password-2026', 10);
 await pg.query("INSERT INTO users (id,name,phone,password_hash,role) VALUES ('00000000-0000-4000-8000-000000000001','E2E Admin','9000000101',$1,'admin'), ('00000000-0000-4000-8000-000000000002','E2E Customer','9000000102',$1,'customer'), ('00000000-0000-4000-8000-000000000003','Other Customer','9000000103',$1,'customer')", [passwordHash]);
 await pg.exec("UPDATE users SET username='e2eadmin' WHERE role='admin'");
@@ -57,9 +58,6 @@ process.env.NEXT_OUTPUT_DIR = '.next';
 process.env.PAYU_ENABLED = 'false';
 process.env.PAYU_MERCHANT_KEY = '';
 process.env.PAYU_MERCHANT_SALT = '';
-process.env.RAZORPAY_KEY_ID = '';
-process.env.RAZORPAY_KEY_SECRET = '';
-process.env.RAZORPAY_WEBHOOK_SECRET = '';
 process.env.RENFLAIR_API_KEY = '';
 process.env.MSG91_WHATSAPP_ENABLED = 'false';
 process.env.MSG91_AUTH_KEY = '';

@@ -1,6 +1,5 @@
 import { configureTestPayu } from './payu-fixtures';
 ﻿import { afterAll, beforeAll, expect, test, vi } from 'vitest';
-import { createHmac } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { createTestDatabase } from './database';
 import * as schema from '../src/db/schema';
@@ -15,8 +14,9 @@ import * as webhook from '../src/app/api/payment/webhook/route';
 import * as retry from '../src/app/api/payment/retry/route';
 import * as checkout from '../src/app/api/payment/create/route';
 import * as adminApi from '../src/app/api/admin/route';
-import * as gateway from '../src/lib/razorpay';
-import { finalizePayment } from '../src/lib/payment-finalization';
+import { finalizePayment as finalizeRecordedPayment } from '../src/lib/payment-finalization';
+import { finalizeFixturePayment } from './payment-fixture';
+const finalizePayment = (confirmation: Parameters<typeof finalizeRecordedPayment>[0]) => finalizeFixturePayment(database.db, confirmation);
 let database: Awaited<ReturnType<typeof createTestDatabase>>;
 let sequence = 0;
 let hash: string;
@@ -32,14 +32,9 @@ async function product(stock = 10) {
   const n = ++sequence;
   return (await database.db.insert(schema.products).values({ name: 'Audit cotton reel ' + n, slug: 'audit-reel-' + n, sku: 'AUDIT-REEL-' + n, price: 100, stockQuantity: stock }).returning())[0];
 }
-async function signedEvent(data: object) {
-  const raw = JSON.stringify(data);
-  return webhook.POST(new Request('http://localhost/api/payment/webhook', { method: 'POST', body: raw, headers: { 'x-razorpay-signature': createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET!).update(raw).digest('hex') } }));
-}
 beforeAll(async () => {
   configureTestPayu();
   process.env.JWT_SECRET = 'isolated-audit-jwt-secret-not-for-production';
-  process.env.RAZORPAY_WEBHOOK_SECRET = 'isolated-audit-webhook-secret';
   process.env.MSG91_WHATSAPP_ENABLED = 'false';
   hash = await hashPassword(password);
   database = await createTestDatabase(); state.db = database.db;
@@ -60,16 +55,12 @@ test('staff password reset invalidates the old cookie while the new login works'
   const login = await auth.POST(new Request('http://localhost/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'login', phone: staff.phone, password: 'Replacement-audit-password-2026' }) }));
   expect(login.status).toBe(200);
 });
-test('a partial processed refund does not mark the full order refunded; duplicate refunds are idempotent', async () => {
-  const u = await user();
-  const [o] = await database.db.insert(schema.orders).values({ userId: u.id, orderNumber: 'AUDIT-REFUND', subtotal: 100, total: 100, paymentStatus: 'paid', orderStatus: 'confirmed', razorpayOrderId: 'order_refund', razorpayPaymentId: 'pay_refund', paidAt: new Date() }).returning();
-  const event = (id: string, amount: number) => ({ event: 'refund.processed', payload: { refund: { entity: { id, payment_id: 'pay_refund', amount, currency: 'INR', status: 'processed' } } } });
-  expect((await signedEvent(event('rfnd_partial', 2000))).status).toBe(200);
-  expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, o.id)))[0].paymentStatus).toBe('paid');
-  expect((await signedEvent(event('rfnd_partial', 2000))).status).toBe(200);
-  expect((await signedEvent(event('rfnd_remaining', 8000))).status).toBe(200);
-  expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, o.id)))[0].paymentStatus).toBe('refunded');
-});
+test('retired refund events preserve existing historical refund ledgers', async () => {
+    const u = await user(); const ledger = { processedRefunds: { rfnd_partial: 2000 }, refundedAmount: 20 };
+    const [o] = await database.db.insert(schema.orders).values({ userId: u.id, orderNumber: 'AUDIT-REFUND', subtotal: 100, total: 100, paymentStatus: 'paid', paymentData: ledger, razorpayOrderId: 'order_refund', razorpayPaymentId: 'pay_refund' }).returning();
+    for (let i = 0; i < 2; i++) expect((await webhook.POST()).status).toBe(410);
+    expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, o.id)))[0]).toMatchObject({ paymentStatus: 'paid', paymentData: ledger });
+  });
 test('a cancelled order cannot be reopened for payment by the customer', async () => {
   const u = await user();
   const [o] = await database.db.insert(schema.orders).values({ userId: u.id, orderNumber: 'AUDIT-CANCELLED', subtotal: 100, total: 100, paymentStatus: 'failed', orderStatus: 'cancelled', razorpayOrderId: 'order_cancelled' }).returning();
@@ -126,7 +117,6 @@ import { readFile } from 'node:fs/promises';
 import { crc32 } from 'node:zlib';
 import * as ordersApi from '../src/app/api/orders/[id]/route';
 import { reconcilePayu } from '../src/lib/payu-payments';
-import { recordRefund } from '../src/lib/refunds';
 import { providerBody } from '../src/lib/msg91-diagnostics';
 
 test('JWT claims are allowlisted even when a full database user is passed to signing', async () => {
@@ -172,24 +162,19 @@ test('paid stock holds require available inventory and an admin confirmation bef
   expect(await database.db.select().from(schema.orderInvoices).where(eq(schema.orderInvoices.orderId, o.id))).toHaveLength(1);
   expect(await database.db.select().from(schema.orderNotifications).where(eq(schema.orderNotifications.orderId, o.id))).toHaveLength(1);
 });
-test('out-of-order full refund then capture remains refunded without fulfillment', async () => {
-  const u = await user();
-  const [o] = await database.db.insert(schema.orders).values({ userId: u.id, orderNumber: 'AUDIT-REFUND-FIRST', subtotal: 100, total: 100, razorpayOrderId: 'order_refund_first' }).returning();
-  vi.spyOn(gateway, 'fetchGatewayPayment').mockResolvedValue({ id: 'pay_refund_first', order_id: o.razorpayOrderId, currency: 'INR', amount: 10000 } as never);
-  expect((await signedEvent({ event: 'refund.processed', payload: { refund: { entity: { id: 'rfnd_first', payment_id: 'pay_refund_first', amount: 10000, currency: 'INR', status: 'processed' } } } })).status).toBe(200);
-  expect((await signedEvent({ event: 'payment.captured', payload: { payment: { entity: { id: 'pay_refund_first', order_id: o.razorpayOrderId, amount: 10000, currency: 'INR' } } } })).status).toBe(200);
-  expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, o.id)))[0].paymentStatus).toBe('refunded');
-  expect(await database.db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, o.id))).toHaveLength(0);
-});
-test('refund currency, over-refunds and conflicting duplicate IDs are rejected without erasing prior ledger', async () => {
-  const u = await user();
-  const [o] = await database.db.insert(schema.orders).values({ userId: u.id, orderNumber: 'AUDIT-REFUND-BOUNDS', subtotal: 100, total: 100, paymentStatus: 'paid', razorpayPaymentId: 'pay_bounds' }).returning();
-  await recordRefund({ paymentId: 'pay_bounds', refundId: 'rfnd_bounds', amount: 1000, currency: 'INR' });
-  await expect(recordRefund({ paymentId: 'pay_bounds', refundId: 'rfnd_bounds', amount: 2000, currency: 'INR' })).rejects.toMatchObject({ status: 409 });
-  await expect(recordRefund({ paymentId: 'pay_bounds', refundId: 'rfnd_over', amount: 10000, currency: 'INR' })).rejects.toMatchObject({ status: 400 });
-  await expect(recordRefund({ paymentId: 'pay_bounds', refundId: 'rfnd_usd', amount: 1000, currency: 'USD' })).rejects.toMatchObject({ status: 400 });
-  expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, o.id)))[0].paymentData?.refundedAmount).toBe(1000);
-});
+test('retired gateway cannot fulfill an already refunded historical order', async () => {
+    const u = await user();
+    const [o] = await database.db.insert(schema.orders).values({ userId: u.id, orderNumber: 'AUDIT-REFUND-FIRST', subtotal: 100, total: 100, paymentStatus: 'refunded', razorpayOrderId: 'order_refund_first', razorpayPaymentId: 'pay_refund_first' }).returning();
+    expect((await webhook.POST()).status).toBe(410);
+    expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, o.id)))[0].paymentStatus).toBe('refunded');
+    expect(await database.db.select().from(schema.orderItems).where(eq(schema.orderItems.orderId, o.id))).toHaveLength(0);
+  });
+test('historical gateway finalization is retired and cannot change recorded refund data', async () => {
+    const u = await user();
+    const [o] = await database.db.insert(schema.orders).values({ userId: u.id, orderNumber: 'AUDIT-REFUND-BOUNDS', subtotal: 100, total: 100, razorpayOrderId: 'order_bounds', paymentData: { refundedAmount: 10 } }).returning();
+    await expect(finalizeRecordedPayment({ provider: 'historical', orderId: 'order_bounds', paymentId: 'pay_bounds', amount: 10000, currency: 'INR' })).rejects.toMatchObject({ status: 410 });
+    expect((await database.db.select().from(schema.orders).where(eq(schema.orders.id, o.id)))[0]).toMatchObject({ paymentStatus: 'pending', paymentData: { refundedAmount: 10 } });
+  });
 test('review submission is serialized to prevent duplicate spam under concurrent requests', async () => {
   const u = await user(), p = await product();
   const body = { res: 'review', productId: p.id, rating: 4, review: 'Good fixture reel', language: 'en' };
