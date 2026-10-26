@@ -17,7 +17,7 @@ import * as paymentStatus from '../src/app/api/payment/payu/status/route';
 import * as orderApi from '../src/app/api/orders/[id]/route';
 import * as extra from '../src/app/api/extra/route';
 import { reconcilePayu } from '../src/lib/payu-payments';
-import { amountInPaise, requestHash, sha512, validResponseHash } from '../src/lib/payu';
+import { amountInPaise, payuConfig, requestHash, sha512, validResponseHash } from '../src/lib/payu';
 import { ensureInvoice } from '../src/lib/invoices';
 let database: Awaited<ReturnType<typeof createTestDatabase>>;
 let sequence = 0;
@@ -33,10 +33,10 @@ type User = typeof schema.users.$inferSelect;
 function request(path: string, data: object, user: User) {
   return new Request('http://localhost:3100' + path, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie: 'vpb_token=' + signToken(user) }, body: JSON.stringify(data) });
 }
-async function fixture() {
+async function fixture(price = 100) {
   const n = ++sequence;
   const [user] = await database.db.insert(schema.users).values({ name: 'PayU fixture', phone: '970000' + String(n).padStart(4, '0'), passwordHash: 'test-only' }).returning();
-  const [product] = await database.db.insert(schema.products).values({ name: 'PayU reel', slug: 'payu-' + n, sku: 'PAYU-' + n, price: 100, stockQuantity: 5 }).returning();
+  const [product] = await database.db.insert(schema.products).values({ name: 'PayU reel', slug: 'payu-' + n, sku: 'PAYU-' + n, price, stockQuantity: 5 }).returning();
   const body = { idempotencyKey: crypto.randomUUID(), items: [{ id: product.id, qty: 1 }], email: 'fixture@example.com', address: { name: user.name, phone: user.phone, addressLine: 'Test street', city: 'Bareilly', state: 'UP', pincode: '243001' }, total: 1, amount: 1 };
   const response = await create.POST(request('/api/payment/create', body, user));
   expect(response.status).toBe(200);
@@ -271,4 +271,38 @@ test('same PayU payment cannot be applied to two orders; live checkout remains d
   expect((await saved(other)).paymentStatus).toBe('pending');
   process.env.PAYU_ENABLED = 'false';
   expect((await create.POST(request('/api/payment/create', other.body, other.user))).status).toBe(503);
+});
+
+test.each(['bounced', 'dropped'])('concurrent retries after verified %s create only one new attempt', async unmappedstatus => {
+  const f = await fixture(); provider(f, { status: 'failure', unmappedstatus });
+  const responses = await Promise.all([retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId }, f.user)),
+    retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId }, f.user))]);
+  const results = await Promise.all(responses.map(response => response.json()));
+  expect(results.filter(result => result.fields)).toHaveLength(1);
+  expect(results.filter(result => result.needsVerification)).toHaveLength(1);
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(2);
+});
+
+test('1800 order cannot accept a 1550 PayU transaction or change its payable amount', async () => {
+  const f = await fixture(1800);
+  expect(f.checkout.fields.amount).toBe('1800.00');
+  provider(f, { amt: '1550.00' });
+  await expect(reconcilePayu(f.checkout.fields.txnid)).rejects.toThrow('does not match');
+  expect(await saved(f)).toMatchObject({ total: 1800, paymentStatus: 'pending' });
+});
+
+test('invalid checkout configuration returns a safe error without another attempt', async () => {
+  const f = await fixture();
+  process.env.PAYU_MERCHANT_SALT = '';
+  const response = await create.POST(request('/api/payment/create', f.body, f.user));
+  expect(response.status).toBe(503);
+  expect(await response.json()).toEqual({ ok: false, error: 'PayU configuration is incomplete. Please contact support.' });
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(1);
+});
+
+test('Live configuration selects production collection and verification endpoints', () => {
+  process.env.PAYU_ENV = 'production';
+  process.env.PAYU_BASE_URL = 'https://checkout.example.com';
+  expect(payuConfig(true)).toMatchObject({ environment: 'production', action: 'https://secure.payu.in/_payment',
+    verifyUrl: 'https://info.payu.in/merchant/postservice.php?form=2' });
 });

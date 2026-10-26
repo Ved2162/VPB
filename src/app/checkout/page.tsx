@@ -11,6 +11,7 @@ import { money } from "@/lib/data";
 import { SafeImg } from "@/components/site";
 
 import { InvoiceActions } from '@/components/invoice-actions';
+import { submitPayuForm } from '@/lib/payu-navigation';
 
 const STEPS = ["Account", "Address", "Summary", "Payment", "Done"];
 
@@ -37,6 +38,10 @@ export default function CheckoutPage() {
   const [pendingReceipt, setPendingReceipt] = useState<string | null>(null);
   const [paymentFailed, setPaymentFailed] = useState(false);
   const restoredPayment = useRef(false);
+  const paymentAction = useRef(false);
+  const verificationAction = useRef(false);
+  const [verificationPaused, setVerificationPaused] = useState(false);
+  const pollCount = useRef(0);
   const [order, setOrder] = useState<any>(null);
   // OTP auth state for checkout Step 1
   const [otpName, setOtpName] = useState("");
@@ -112,6 +117,8 @@ export default function CheckoutPage() {
   };
 
   const verifyReceipt = async (orderId: string) => {
+    if (verificationAction.current) return;
+    verificationAction.current = true;
     setPlacing(true); setErr(''); setPendingReceipt(orderId); setStep(3);
     try {
       const response = await apiFetch('/api/payment/payu/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) });
@@ -123,7 +130,8 @@ export default function CheckoutPage() {
       setOrder(result.order);
       setPaymentFailed(confirmation.paymentStatus === 'failed');
       if (confirmation.paymentStatus !== 'paid') {
-        setErr(confirmation.paymentStatus === 'failed' ? 'Payment failed or was cancelled. You can retry the same order.' : confirmation.providerState === 'initiated' ? 'This checkout is still open at PayU. Complete or cancel it in the PayU tab, then check payment status. A new attempt becomes available after PayU confirms it has ended.' : 'PayU has not confirmed a final payment result yet. Check payment status shortly. If you have not paid, wait for PayU to close this attempt before retrying.');
+        setVerificationPaused(false);
+        setErr(confirmation.paymentStatus === 'failed' ? 'Payment failed or was cancelled. You can retry the same order.' : 'PayU has not confirmed a final payment result yet. If a PayU page is open, complete or cancel there. Otherwise check status again shortly. A new attempt is available only after PayU confirms this one has ended. If it stays pending, contact support with order ' + (result.order.orderNumber || orderId) + '.');
         return;
       }
       setPendingReceipt(null); setStep(4); clear();
@@ -131,9 +139,20 @@ export default function CheckoutPage() {
       sessionStorage.removeItem('vpb-checkout-request');
       window.history.replaceState(null, '', '/checkout');
       toast(result.order.fulfillmentPending ? 'Payment received - your order is awaiting review.' : 'Payment successful - order confirmed!');
-    } catch (error) { setErr(error instanceof Error ? error.message : 'Unable to confirm payment'); }
-    finally { setPlacing(false); }
+    } catch (error) { setVerificationPaused(true); setErr(error instanceof Error ? error.message : 'Unable to confirm payment'); }
+    finally { verificationAction.current = false; setPlacing(false); }
   };
+
+  useEffect(() => {
+    if (!pendingReceipt || placing || paymentFailed || verificationPaused || pollCount.current >= 5) return;
+    const timer = window.setTimeout(() => {
+      pollCount.current++;
+      void verifyReceipt(pendingReceipt);
+    }, 5000 * (pollCount.current + 1));
+    return () => window.clearTimeout(timer);
+    // Bounded recovery; manual checks remain available after polling or outages.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingReceipt, placing, paymentFailed, verificationPaused]);
 
   useEffect(() => {
     if (!me || loading || restoredPayment.current) return;
@@ -149,10 +168,11 @@ export default function CheckoutPage() {
   }, [me, loading]);
 
   const placeOrder = async (retryOrderId?: string) => {
-    if (placing) return;
+    if (placing || paymentAction.current) return;
     if (pendingReceipt && !paymentFailed) { await verifyReceipt(pendingReceipt); return; }
     const existingId = retryOrderId || pendingReceipt;
     if (!existingId && (!sel || !hasDeliveryEmail)) { toast('Complete your delivery address and email first'); setStep(1); return; }
+    paymentAction.current = true;
     setPlacing(true); setErr(''); setStep(3);
     try {
       const fingerprint = JSON.stringify({ items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel });
@@ -166,19 +186,16 @@ export default function CheckoutPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
         body: JSON.stringify(existingId ? { orderId: existingId } : { items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel, email: deliveryEmail.trim(), idempotencyKey: checkoutRequest.id }) });
       const result = await response.json();
-      if (!result.ok) throw new Error(result.error || 'Unable to prepare payment');
+      if (!response.ok || !result.ok) throw new Error(result.error || 'Unable to prepare payment');
       if (result.alreadyPaid || result.needsVerification) { await verifyReceipt(result.orderId); return; }
       if (!['https://test.payu.in/_payment', 'https://secure.payu.in/_payment'].includes(result.action)) throw new Error('Invalid checkout destination');
       sessionStorage.setItem('vpb-payu-order', result.orderId);
       setPendingReceipt(result.orderId); setPaymentFailed(false);
-      const form = document.createElement('form');
-      form.method = 'POST'; form.action = result.action;
-      for (const [name, value] of Object.entries(result.fields)) {
-        const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = String(value); form.appendChild(input);
-      }
-      document.body.appendChild(form); form.submit(); form.remove();
-    } catch (error) { setErr(error instanceof Error ? error.message : 'Payment gateway error. Please retry.'); }
-    finally { setPlacing(false); }
+      if (result.orderSummary) setOrder(result.orderSummary);
+      pollCount.current = 0; setVerificationPaused(false);
+      await submitPayuForm(result.action, result.fields);
+    } catch (error) { setVerificationPaused(true); setErr(error instanceof Error ? error.message : 'Payment gateway error. Please retry.'); }
+    finally { paymentAction.current = false; setPlacing(false); }
   };
 
   if (!ready || loading) return <SectionLoader label="Preparing secure checkout…" />;

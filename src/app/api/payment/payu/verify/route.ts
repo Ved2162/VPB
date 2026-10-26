@@ -19,6 +19,6 @@ export async function POST(req: Request) {
     const [order] = await db.select().from(orders).where(and(eq(orders.id, orderId), eq(orders.userId, user.id)));
     if (!order?.payuTxnId) throw new DeliveryError('Order not found', 404);
     const verified = ['paid', 'refunded'].includes(order.paymentStatus) ? order : await reconcilePayu(order.payuTxnId);
-    return Response.json({ ok: true, orderId: order.id, paymentStatus: verified.paymentStatus, providerState: verified.paymentData?.payuVerification?.txnid === verified.payuTxnId ? verified.paymentData.payuVerification.state : null });
+    return Response.json({ ok: true, orderId: order.id, paymentStatus: verified.paymentStatus, providerState: verified.paymentData?.payuVerification?.txnid === verified.payuTxnId ? verified.paymentData.payuVerification.state : null }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return deliveryFailure(error); }
 }

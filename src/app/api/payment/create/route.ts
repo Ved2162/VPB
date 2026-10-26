@@ -10,6 +10,7 @@ import { payuConfig, paymentEmail } from '@/lib/payu';
 import { preparePayuCheckout } from '@/lib/payu-payments';
 import { sameOrigin, DeliveryError, textField } from '@/lib/shipment-rules';
 import { activeUser, rateLimit, deliveryFailure } from '@/lib/delivery-server';
+import { payuLog } from '@/lib/payu-log';
 
 // Server-side cart validation + PayU checkout preparation.
 // Trusts ONLY the cart lines and re-prices from the database — never the frontend total.
@@ -107,6 +108,7 @@ export async function POST(req: Request) {
     return NextResponse.json(await preparePayuCheckout(tx, order, email));
     });
   } catch (e: any) {
+    payuLog('initiation_rejected', { httpStatus: e instanceof DeliveryError ? e.status : 500, code: 'checkout_unavailable' });
     return deliveryFailure(e);
   }
 }

@@ -1,6 +1,7 @@
 import 'server-only';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { DeliveryError } from './shipment-rules';
+import { payuLog } from './payu-log';
 
 export const PAYU_PRODUCT = 'VPB order';
 export function payuConfig(forCheckout = false) {
@@ -52,6 +53,7 @@ export async function verifyPayuTransaction(txnid: string) {
       signal: AbortSignal.timeout(8000), headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ key: config.key, command: 'verify_payment', var1: txnid,
         hash: sha512([config.key, 'verify_payment', txnid, config.salt].join('|')) }) });
+    payuLog('verify_transport', { txnid, httpStatus: response.status });
     if (!response.ok) throw new Error();
     const body = await response.json();
     const detail = body.transaction_details?.[txnid];
@@ -59,6 +61,7 @@ export async function verifyPayuTransaction(txnid: string) {
       throw new DeliveryError('Payment has not been confirmed by PayU yet. Check again shortly.', 409);
     return detail as Record<string, string>;
   } catch (error) {
+    payuLog('verify_unavailable', { txnid, code: error instanceof DeliveryError ? 'not_confirmed' : 'transport_error' });
     if (error instanceof DeliveryError) throw error;
     throw new DeliveryError('PayU verification is temporarily unavailable. Your payment remains awaiting verification.', 503);
   }

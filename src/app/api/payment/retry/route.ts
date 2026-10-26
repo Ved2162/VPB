@@ -8,6 +8,7 @@ import { eq } from "drizzle-orm";
 import { preparePayuCheckout, reconcilePayu } from '@/lib/payu-payments';
 import { payuConfig } from '@/lib/payu';
 import { activeUser, deliveryFailure, rateLimit } from '@/lib/delivery-server';
+import { payuLog } from '@/lib/payu-log';
 
 // Retry failed payment on the same order (preserves order number & cart snapshot)
 export async function POST(req: Request) {
@@ -37,7 +38,10 @@ export async function POST(req: Request) {
     if (["paid", "refunded"].includes(o[0].paymentStatus)) return NextResponse.json({ ok: true, alreadyPaid: true, orderId: o[0].id });
     // PayU requires a new ID for a new checkout request. Never resubmit a
     // provider-pending ID or create a replacement while its result is unknown.
-    if (o[0].payuTxnId && o[0].paymentStatus !== 'failed') return NextResponse.json({ ok: true, needsVerification: true, orderId: o[0].id });
+    if (o[0].payuTxnId && o[0].paymentStatus !== 'failed') {
+      payuLog('retry_blocked', { orderId: o[0].id, txnid: o[0].payuTxnId, status: o[0].paymentStatus });
+      return NextResponse.json({ ok: true, needsVerification: true, orderId: o[0].id });
+    }
 
     if (o[0].orderStatus !== 'placed') throw new DeliveryError('This order cannot be reopened for payment', 409);
 
@@ -45,6 +49,7 @@ export async function POST(req: Request) {
     return NextResponse.json(await preparePayuCheckout(tx, o[0], body.email));
     });
   } catch (e: any) {
+    payuLog('retry_rejected', { httpStatus: e instanceof DeliveryError ? e.status : 500, code: 'retry_unavailable' });
     return deliveryFailure(e);
   }
 }

@@ -8,6 +8,7 @@ import { amountInPaise, PAYU_PRODUCT, paymentEmail, payuConfig, requestHash, val
 import { finalizePayment } from './payment-finalization';
 import { releaseStock } from './inventory';
 import { scheduleOrderNotification } from './schedule-order-notification';
+import { payuLog } from './payu-log';
 
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Order = typeof orders.$inferSelect;
@@ -22,8 +23,10 @@ export async function preparePayuCheckout(tx: Transaction, order: Order, email: 
   if (attempt && (attempt.environment !== config.environment || attempt.merchantKey !== config.key || attempt.amount !== order.total * 100 || attempt.orderId !== order.id))
     throw new DeliveryError('Payment configuration changed. Contact support for reconciliation.', 409);
   if (attempt?.status === 'paid') throw new DeliveryError('Order is already paid', 409);
-  if (attempt?.status === 'pending' && attempt.verifiedAt)
+  if (attempt?.status === 'pending' && attempt.verifiedAt) {
+    payuLog('retry_blocked', { orderId: order.id, txnid: attempt.txnId, status: 'pending' });
     return { ok: true, needsVerification: true, orderId: order.id };
+  }
   if (!attempt || attempt.status === 'failed' && attempt.verifiedAt) {
     const firstname = order.customerName || order.shippingAddress.name;
     if (!firstname || firstname.includes('|')) throw new DeliveryError('Invalid payment name');
@@ -37,7 +40,10 @@ export async function preparePayuCheckout(tx: Transaction, order: Order, email: 
     udf1: order.id, udf2: '', udf3: '', udf4: '', udf5: '',
     surl: config.base + '/api/payment/payu/return', curl: config.base + '/api/payment/payu/return', furl: config.base + '/api/payment/payu/return' };
   fields.hash = requestHash(fields, config.salt);
-  return { ok: true, orderId: order.id, action: config.action, fields };
+  payuLog('form_prepared', { orderId: order.id, txnid: attempt.txnId, amountPaise: attempt.amount });
+  return { ok: true, orderId: order.id, action: config.action, fields,
+    orderSummary: { id: order.id, orderNumber: order.orderNumber, subtotal: order.subtotal, discount: order.discount,
+      shippingCharge: order.shippingCharge, total: order.total } };
 }
 
 export async function validatedPayuAttempt(txnid: string, callback?: Record<string, string>) {
@@ -56,6 +62,17 @@ export async function validatedPayuAttempt(txnid: string, callback?: Record<stri
 }
 
 export async function reconcilePayu(txnid: string, callback?: Record<string, string>) {
+  try {
+    const order = await reconcileAttempt(txnid, callback);
+    payuLog('reconciled', { txnid, orderId: order.id, status: order.paymentStatus });
+    return order;
+  } catch (error) {
+    payuLog('verification_rejected', { txnid, httpStatus: error instanceof DeliveryError ? error.status : 500, code: 'verification_incomplete' });
+    throw error;
+  }
+}
+
+async function reconcileAttempt(txnid: string, callback?: Record<string, string>) {
   const attempt = await validatedPayuAttempt(txnid, callback);
   const detail = await verifyPayuTransaction(txnid);
   if (detail.txnid !== txnid || amountInPaise(String(detail.amt)) !== attempt.amount || detail.udf1 !== attempt.orderId ||
@@ -77,6 +94,7 @@ export async function reconcilePayu(txnid: string, callback?: Record<string, str
     const [current] = await tx.select().from(payuAttempts).where(eq(payuAttempts.txnId, txnid)).for('update');
     if (current.status !== 'paid') await tx.update(payuAttempts).set({ status: failed ? 'failed' : 'pending', verifiedAt: new Date() }).where(eq(payuAttempts.txnId, txnid));
     if (current.status === 'paid' || order.payuTxnId !== txnid || ['paid', 'refunded'].includes(order.paymentStatus)) return order;
+    if (attempt.amount !== order.total * 100) throw new DeliveryError('Payment amount does not match the order');
     const safeStatus = ['success', 'failure', 'failed', 'pending'].includes(providerStatus) ? providerStatus : 'unknown';
     const safeState = ['initiated', 'in progress', 'pending', 'auth', 'captured', 'failed', 'usercancelled', 'bounced', 'dropped', 'autorefund'].includes(providerState) ? providerState : 'unknown';
     const [updated] = await tx.update(orders).set({

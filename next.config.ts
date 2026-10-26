@@ -12,7 +12,9 @@ const nextConfig: NextConfig = {
       { key: 'X-Frame-Options', value: 'DENY' },
       { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
       { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
-      { key: 'Content-Security-Policy', value: "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://test.payu.in https://secure.payu.in" },
+      // Chromium also checks HTTP redirects following a form POST. PayU can
+      // route hosted checkout through its API host before displaying the page.
+      { key: 'Content-Security-Policy', value: "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://test.payu.in https://secure.payu.in https://api.payu.in" },
       { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains' },
     ] }];
   },

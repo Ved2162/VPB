@@ -39,7 +39,7 @@ All variables are server-side; none use `NEXT_PUBLIC_`. Keep distinct databases 
 | `PAYU_MERCHANT_SALT` | Matching secret salt, backend only |
 | `PAYU_BASE_URL` | Canonical application origin, no path/query; HTTPS required except test localhost |
 
-Test collection: `https://test.payu.in/_payment`. Production collection: `https://secure.payu.in/_payment`. Verification uses `https://test.payu.in/merchant/postservice?form=2` or `https://info.payu.in/merchant/postservice.php?form=2`, respectively. Arbitrary provider endpoint overrides are not supported. CSP permits form posts only to self and these two checkout hosts.
+Test collection: `https://test.payu.in/_payment`. Production collection: `https://secure.payu.in/_payment`. Verification uses `https://test.payu.in/merchant/postservice?form=2` or `https://info.payu.in/merchant/postservice.php?form=2`, respectively. Arbitrary provider endpoint overrides are not supported. CSP permits form posts to self and the two collection hosts, plus `https://api.payu.in` for PayU's subsequent hosted navigation. The browser still accepts only the two exact `_payment` URLs as initial form destinations. See [checkout incident analysis](payu-checkout-repair.md) for the browser regression and remaining Live validation.
 
 No `RAZORPAY_*` variables are used by the application after retirement. The local template and local gateway settings no longer include them. Merchant-dashboard credentials and historical database records are not deleted by this change. Keep JWT, SMS, invoice and MSG91 configuration as before. Disabling new PayU checkout does not disable verification of outstanding PayU attempts.
 
