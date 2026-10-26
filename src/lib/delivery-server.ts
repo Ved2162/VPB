@@ -10,7 +10,7 @@ import { readJson } from './http-security';
 export async function activeUser(req: Request) {
   const token = getUserFromHeader(req);
   if (!token) throw new DeliveryError('Please log in to continue', 401);
-  const [user] = await db.select({ id: users.id, name: users.name, phone: users.phone, role: users.role, active: users.active, sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, token.id));
+  const [user] = await db.select({ id: users.id, name: users.name, email: users.email, phone: users.phone, role: users.role, active: users.active, sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, token.id));
   if (!user?.active) throw new DeliveryError('Account disabled or unavailable', 403);
   if (user.sessionVersion !== (token.sessionVersion ?? 0)) throw new DeliveryError('Session expired. Please log in again', 401);
   return user;

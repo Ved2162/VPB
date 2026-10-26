@@ -1,10 +1,11 @@
+import { paymentEmail } from '@/lib/payu';
 import { publicReviews } from '@/lib/reviews';
 import { publicProduct } from '@/lib/catalog';
 import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { addresses, reviews, products, users } from "@/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { addresses, reviews, products, users, orders } from "@/db/schema";
+import { eq, desc, and, isNotNull } from "drizzle-orm";
 import { activeUser, rateLimit, deliveryFailure } from '@/lib/delivery-server';
 import { sameOrigin, textField, DeliveryError } from '@/lib/shipment-rules';
 import { isUuid } from '@/lib/http-security';
@@ -20,7 +21,13 @@ export async function GET(req: Request) {
       if (me.role === "delivery") throw new DeliveryError("Customer access required", 403);
       if (!me) return NextResponse.json({ ok: false, error: "Login required" }, { status: 401 });
       const rows = await db.select().from(addresses).where(eq(addresses.userId, me.id)).orderBy(desc(addresses.createdAt));
-      return NextResponse.json({ ok: true, addresses: rows });
+      let email: string | null = null;
+      try { email = paymentEmail(me.email); } catch { /* Older OTP profiles can lack email. */ }
+      if (!email) {
+        const previous = await db.select({ email: orders.customerEmail }).from(orders).where(and(eq(orders.userId, me.id), isNotNull(orders.customerEmail))).orderBy(desc(orders.createdAt)).limit(5);
+        for (const order of previous) { try { email = paymentEmail(order.email); break; } catch { /* Skip invalid historical contact data. */ } }
+      }
+      return NextResponse.json({ ok: true, addresses: rows, email });
     }
     if (res === "reviews") {
       const pid = u.searchParams.get("productId") || "";
@@ -37,11 +44,21 @@ export async function POST(req: Request) {
   try {
     sameOrigin(req);
     const body = await readJson(req);
+    if (body.res === 'checkout_contact') {
+      const me = await activeUser(req);
+      if (me.role === 'delivery') throw new DeliveryError('Customer access required', 403);
+      const email = paymentEmail(body.email);
+      await rateLimit('checkout-contact:' + me.id, 30, 60);
+      const [saved] = await db.update(users).set({ email }).where(and(eq(users.id, me.id), eq(users.active, true), eq(users.sessionVersion, me.sessionVersion))).returning({ id: users.id });
+      if (!saved) throw new DeliveryError('Session expired. Please log in again', 401);
+      return NextResponse.json({ ok: true });
+    }
     if (body.res === "address") {
       const me = await activeUser(req);
       if (me.role === "delivery") throw new DeliveryError("Customer access required", 403);
       if (!me) return NextResponse.json({ ok: false, error: "Login required" }, { status: 401 });
       const { id, isDefault } = body;
+      const email = body.email === undefined ? undefined : paymentEmail(body.email);
       if (id && !isUuid(id)) throw new DeliveryError('Invalid address ID');
       const name = textField(body.name, 'name', 120, true), phone = textField(body.phone, 'phone', 20, true), addressLine = textField(body.addressLine, 'address', 220, true), city = textField(body.city, 'city', 100, true), state = textField(body.state, 'state', 100, true), pincode = textField(body.pincode, 'pincode', 10, true), landmark = textField(body.landmark ?? '', 'landmark', 200);
       if (!/^\d{6}$/.test(pincode) || !/^\+?[0-9]{7,15}$/.test(phone)) throw new DeliveryError('Invalid phone or pincode');
@@ -52,12 +69,18 @@ export async function POST(req: Request) {
         const existing = await db.select().from(addresses).where(eq(addresses.id, id));
         if (!existing.length) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
         if (existing[0].userId !== me.id) return NextResponse.json({ ok: false, error: "Not allowed" }, { status: 403 });
-        await db.update(addresses).set({ name, phone, addressLine, city, state, pincode, landmark: landmark || null }).where(eq(addresses.id, id));
+        await db.transaction(async tx => {
+          await tx.update(addresses).set({ name, phone, addressLine, city, state, pincode, landmark: landmark || null }).where(eq(addresses.id, id));
+          if (email) await tx.update(users).set({ email }).where(eq(users.id, me.id));
+        });
         return NextResponse.json({ ok: true });
       }
-      if (isDefault) await db.update(addresses).set({ isDefault: false }).where(eq(addresses.userId, me.id));
-      const ins = await db.insert(addresses).values({ userId: me.id, name, phone, addressLine, city, state, pincode, landmark: landmark || null, isDefault: !!isDefault }).returning();
-      return NextResponse.json({ ok: true, address: ins[0] });
+      return await db.transaction(async tx => {
+        if (isDefault) await tx.update(addresses).set({ isDefault: false }).where(eq(addresses.userId, me.id));
+        const [address] = await tx.insert(addresses).values({ userId: me.id, name, phone, addressLine, city, state, pincode, landmark: landmark || null, isDefault: !!isDefault }).returning();
+        if (email) await tx.update(users).set({ email }).where(eq(users.id, me.id));
+        return NextResponse.json({ ok: true, address });
+      });
     }
     if (body.res === "review") {
       const me = await activeUser(req);

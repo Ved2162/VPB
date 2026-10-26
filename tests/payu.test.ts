@@ -15,6 +15,7 @@ import * as webhook from '../src/app/api/payment/payu/webhook/route';
 import * as returned from '../src/app/api/payment/payu/return/route';
 import * as paymentStatus from '../src/app/api/payment/payu/status/route';
 import * as orderApi from '../src/app/api/orders/[id]/route';
+import * as extra from '../src/app/api/extra/route';
 import { reconcilePayu } from '../src/lib/payu-payments';
 import { amountInPaise, requestHash, sha512, validResponseHash } from '../src/lib/payu';
 import { ensureInvoice } from '../src/lib/invoices';
@@ -93,6 +94,44 @@ test('backend pricing and repeated concurrent checkout create one order and one 
   expect((await saved(f)).paymentStatus).toBe('pending');
   expect(await database.db.select().from(schema.orderNotifications).where(eq(schema.orderNotifications.orderId, f.checkout.orderId))).toHaveLength(0);
   await expect(ensureInvoice(f.checkout.orderId)).rejects.toThrow('verified payment');
+});
+
+test('checkout uses the saved customer email when no email is supplied at payment', async () => {
+  const f = await fixture();
+  await database.db.update(schema.users).set({ email: 'saved@example.com' }).where(eq(schema.users.id, f.user.id));
+  const response = await create.POST(request('/api/payment/create', { ...f.body, email: undefined, idempotencyKey: crypto.randomUUID(),
+    address: { ...f.body.address, addressLine: 'Another delivery street' } }, f.user));
+  expect(response.status).toBe(200);
+  expect((await response.json()).fields.email).toBe('saved@example.com');
+});
+
+test('delivery details reuse only the current customer profile or previous order email', async () => {
+  const f = await fixture(), other = await fixture();
+  await database.db.update(schema.orders).set({ customerEmail: 'previous@example.com' }).where(eq(schema.orders.id, f.checkout.orderId));
+  await database.db.update(schema.orders).set({ customerEmail: 'other@example.com' }).where(eq(schema.orders.id, other.checkout.orderId));
+  const get = () => extra.GET(new Request('http://localhost:3100/api/extra?res=addresses', { headers: { cookie: 'vpb_token=' + signToken(f.user) } }));
+  expect((await (await get()).json()).email).toBe('previous@example.com');
+  await database.db.update(schema.users).set({ email: 'profile@example.com' }).where(eq(schema.users.id, f.user.id));
+  expect((await (await get()).json()).email).toBe('profile@example.com');
+});
+
+test('delivery contact saves only a valid email for the authenticated customer and rejects staff', async () => {
+  const f = await fixture(), other = await fixture();
+  expect((await extra.POST(request('/api/extra', { res: 'checkout_contact', email: 'invalid' }, f.user))).status).toBe(400);
+  expect((await extra.POST(request('/api/extra', { res: 'checkout_contact', email: 'contact@example.com', userId: other.user.id }, f.user))).status).toBe(200);
+  expect((await database.db.select().from(schema.users).where(eq(schema.users.id, f.user.id)))[0].email).toBe('contact@example.com');
+  expect((await database.db.select().from(schema.users).where(eq(schema.users.id, other.user.id)))[0].email).toBeNull();
+  await database.db.update(schema.users).set({ role: 'delivery' }).where(eq(schema.users.id, f.user.id));
+  expect((await extra.POST(request('/api/extra', { res: 'checkout_contact', email: 'staff@example.com' }, f.user))).status).toBe(403);
+});
+
+test('saving a delivery address saves its email; editing another address never changes contact data', async () => {
+  const f = await fixture(), other = await fixture();
+  const created = await extra.POST(request('/api/extra', { res: 'address', ...f.body.address, email: 'delivery@example.com' }, f.user));
+  expect(created.status).toBe(200); const { address } = await created.json();
+  expect((await database.db.select().from(schema.users).where(eq(schema.users.id, f.user.id)))[0].email).toBe('delivery@example.com');
+  expect((await extra.POST(request('/api/extra', { res: 'address', ...other.body.address, id: address.id, email: 'wrong@example.com' }, other.user))).status).toBe(403);
+  expect((await database.db.select().from(schema.users).where(eq(schema.users.id, other.user.id)))[0].email).toBeNull();
 });
 
 test('a replayed checkout request after capture returns the original paid order', async () => {

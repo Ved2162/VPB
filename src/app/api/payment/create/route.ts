@@ -38,10 +38,9 @@ export async function POST(req: Request) {
     }
     if (new Set(ids).size !== ids.length) throw new DeliveryError('Duplicate cart items');
     payuConfig(true);
-    const email = paymentEmail(body.email);
     if (!isUuid(body.idempotencyKey)) throw new DeliveryError('Invalid checkout request ID');
     return await db.transaction(async tx => {
-    const [account] = await tx.select({ active: users.active, role: users.role, sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, me.id)).for('update');
+    const [account] = await tx.select({ active: users.active, email: users.email, role: users.role, sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, me.id)).for('update');
     if (account && account.sessionVersion !== me.sessionVersion) throw new DeliveryError('Session expired. Please log in again', 401);
     if (!account?.active || account.role === 'delivery') throw new DeliveryError('Account unavailable', 403);
     const [previousRequest] = await tx.select().from(orders).where(or(eq(orders.checkoutKey, body.idempotencyKey), and(eq(orders.userId, me.id), sql`coalesce(${orders.paymentData}->'checkoutRequestIds', '[]'::jsonb) @> ${JSON.stringify([body.idempotencyKey])}::jsonb`)));
@@ -49,6 +48,7 @@ export async function POST(req: Request) {
       if (previousRequest.userId !== me.id) throw new DeliveryError('Checkout request is unavailable', 409);
       if (['paid', 'refunded'].includes(previousRequest.paymentStatus)) return NextResponse.json({ ok: true, alreadyPaid: true, orderId: previousRequest.id });
     }
+    const email = paymentEmail(body.email || account.email);
     const prods = await tx.select().from(products).where(and(inArray(products.id, ids), publicProduct));
     const map = new Map(prods.map((p) => [p.id, p]));
 

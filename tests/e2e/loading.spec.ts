@@ -85,15 +85,13 @@ test('product, account, cart and checkout use bounded section/button loading wit
   await expect(page.locator('.vpb-global-loader')).toHaveCount(0);
   await page.goto('/checkout');
   await expect(page.getByText('Step 3', { exact: false })).toBeVisible();
-  await page.getByRole('button', { name: 'Continue to Payment' }).click();
   const payment = gate();
   await page.route('**/api/payment/create', async route => { await payment.promise; await route.fulfill({ status: 503, json: { ok: false, error: 'Payment connection interrupted' } }); });
-  const pay = page.getByRole('button', { name: /^Pay ₹/ });
-  await pay.click();
-  await expect(page.getByRole('button', { name: 'Processing payment…' })).toBeDisabled();
+  await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Opening PayU...' })).toBeDisabled();
   await expect(page.locator('.vpb-global-loader')).toHaveCount(0);
   payment.release();
-  await expect(pay).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Continue to PayU', exact: true })).toBeEnabled();
   await expect(page.locator('.vpb-request-activity')).toHaveCount(0);
 });
 test('mobile reduced motion, dark circular mark and browser history remain usable', async ({ page }) => {

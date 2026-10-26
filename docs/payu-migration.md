@@ -12,6 +12,8 @@ The new checkout uses PayU exclusively. Historical Razorpay columns, payment met
 
 ## Payment protocol
 
+Checkout opens PayU directly when the customer selects **Continue to Payment** on the order summary. There is no email or payment-method form in Step 4. PayU requires a real email: checkout reuses the customer's valid profile or previous-order email, or collects and saves it once with delivery details. Editing an email does not advance the delivery step until the customer saves it. After PayU returns, server verification still controls order confirmation, invoices and notifications.
+
 The selected integration is classic PayU India Hosted Checkout (`_payment`), using SHA-512 and merchant key/salt. It is separate from PayU v2, Web Checkout Pro, split payments and multicurrency flows. Production account activation and method availability still need confirmation. The implementation follows [Hosted Checkout](https://docs.payu.in/reference/_payment_payu_hosted_checkout), [hashing](https://docs.payu.in/docs/hashing-request-and-response), [Verify Payment](https://docs.payu.in/reference/verify_payment_api) and [payment states](https://docs.payu.in/reference/payment-state-explanations).
 
 1. The authenticated create route validates quantities and address, reads eligible product prices, and preserves current pricing: free shipping, a Rs 200 discount at subtotal >= Rs 6000, and no separately recorded tax. Client totals are ignored. A real customer payment email is required; it is never fabricated.
@@ -135,3 +137,9 @@ The merchant authorized removal of all executable Razorpay integration paths and
 The current open-checkout message is generated from PayU's verified `initiated` state. Retiring the old integration does not cancel or complete that PayU attempt. Pending attempts remain unpaid until PayU returns an authoritative final result; they are not forcibly failed, replaced or marked paid.
 
 Retirement validation: 152 regression tests passed across 16 files, 26 browser tests passed, the production build passed, and lint had zero errors (four existing image warnings). The default migration was applied to the existing database without rewriting its 17 orders. The application role retains PayU attempt SELECT/INSERT/UPDATE access. Vercel Production has no Razorpay variable names, and the installed dependency tree no longer contains the Razorpay SDK. The merchant explicitly authorized direct push and deployment for this removal.
+
+## Direct PayU handoff
+
+The merchant requested that Step 4 open the hosted payment page immediately. The summary action now creates the server-priced checkout and submits its signed form directly to PayU. Saved contact details are reused; a customer without a valid email supplies it with delivery details once. The contact endpoint validates the email and updates only the authenticated account. Retry, pending recovery and verified return behavior remain unchanged. No database migration is required.
+
+Validation: 156 regression tests across 16 files and 27 browser tests passed, including saved-contact checkout, first-time contact persistence, direct hosted-form submission, payment return and pending/cancellation recovery. The production build passed; lint reported zero errors and four existing image warnings. Secret scanning found zero current secrets. No real payment was initiated.

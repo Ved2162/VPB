@@ -21,9 +21,8 @@ test('hosted checkout form posts to PayU and returns to server-verified order; r
   });
   await page.route('**/api/payment/payu/verify', route => route.fulfill({ json: { ok: true, orderId, paymentStatus: 'paid' } }));
   await page.goto('/checkout');
+  await expect(page.getByLabel('Email address', { exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
-  await page.getByLabel('Payment email').fill('fixture@example.com');
-  await page.getByRole('button', { name: /^Pay / }).click();
   await expect(page.getByRole('heading', { name: 'Order Confirmed!', exact: true })).toBeVisible();
   expect(new URLSearchParams(posted).get('txnid')).toBe('a'.repeat(24));
   expect(new URLSearchParams(posted).get('amount')).toBe('100.00');
@@ -31,6 +30,32 @@ test('hosted checkout form posts to PayU and returns to server-verified order; r
   expect(await page.evaluate(() => sessionStorage.getItem('vpb-payu-order'))).toBeNull();
   await page.reload();
   await expect(page.getByRole('heading', { name: 'Order Confirmed!', exact: true })).toHaveCount(0);
+});
+
+test('a missing email is saved with delivery details once and payment opens PayU directly', async ({ page, context }) => {
+  await context.clearCookies();
+  const login = await context.request.post('/api/auth', { data: { action: 'login', phone: '9000000121', password: 'E2e-only-password-2026' } });
+  expect(login.ok()).toBe(true);
+  expect((await context.request.post('/api/extra', { data: { res: 'address', name: 'New checkout customer', phone: '9000000121',
+    addressLine: 'Test street', city: 'Bareilly', state: 'Uttar Pradesh', pincode: '243001', isDefault: true } })).ok()).toBe(true);
+  await page.goto('/checkout');
+  await expect(page.getByRole('heading', { name: /Step 2/ })).toBeVisible();
+  await page.getByLabel('Email address', { exact: true }).fill('newcustomer@example.com');
+  await page.getByRole('button', { name: 'Use selected address', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /Step 3/ })).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('heading', { name: /Step 3/ })).toBeVisible();
+  await expect(page.getByLabel('Email address', { exact: true })).toHaveCount(0);
+  let created = 0;
+  await page.route('**/api/payment/create', async route => {
+    created++;
+    expect(route.request().postDataJSON().email).toBe('newcustomer@example.com');
+    await route.fulfill({ json: { ok: true, orderId, action: 'https://test.payu.in/_payment', fields: { txnid: 'c'.repeat(24), email: 'newcustomer@example.com' } } });
+  });
+  await page.route('https://test.payu.in/_payment', route => route.fulfill({ contentType: 'text/html', body: '<h1>Direct PayU checkout fixture</h1>' }));
+  await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'Direct PayU checkout fixture', exact: true })).toBeVisible();
+  expect(created).toBe(1);
 });
 
 test('pending return and refresh never display confirmation; a later verified capture completes the order', async ({ page }) => {

@@ -50,6 +50,7 @@ await pg.exec("UPDATE orders SET order_status='confirmed', paid_at=created_at, r
 await pg.exec(`INSERT INTO products (id,name,slug,sku,price,stock_quantity,images) VALUES ('20000000-0000-4000-8000-000000000001','Loader test manjha','loader-test-manjha','LOADER-MANJHA',100,25,'["/images/manjha/m01.png"]');
 INSERT INTO addresses(user_id,name,phone,address_line,city,state,pincode,is_default) VALUES('00000000-0000-4000-8000-000000000002','E2E Customer','9000000102','Test street','Bareilly','Uttar Pradesh','243001',true);`);
 await pg.exec("INSERT INTO addresses(user_id,name,phone,address_line,city,state,pincode,is_default) VALUES('00000000-0000-4000-8000-000000000020','PayU browser fixture','9000000120','Test street','Bareilly','Uttar Pradesh','243001',true)");
+await pg.exec("UPDATE users SET email='fixture@example.com' WHERE role='customer' AND phone <> '9000000121'");
 const socket = new PGLiteSocketServer({ db: pg, host: '127.0.0.1', port: 54329, maxConnections: 20 });
 await socket.start();
 process.env.DATABASE_URL = 'postgresql://postgres:postgres@127.0.0.1:54329/postgres';

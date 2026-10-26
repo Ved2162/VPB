@@ -20,7 +20,7 @@ export default function CheckoutPage() {
   const { toast } = useToast();
   const router = useRouter();
   const [chosenStep, setStep] = useState<number | null>(null);
-  const addressData = useApiResource<{ addresses: any[] }>(me ? "/api/extra?res=addresses" : null);
+  const addressData = useApiResource<{ addresses: any[]; email?: string | null }>(me ? "/api/extra?res=addresses" : null);
   const addrs = addressData.data?.addresses || [];
   const otpBusy = useApiActivity("/api/otp");
   const sendingOtp = useApiActivity("/api/otp/send");
@@ -28,13 +28,14 @@ export default function CheckoutPage() {
   const addressBusy = useApiActivity("/api/extra");
   const [selectedAddress, setSel] = useState<any>(null);
   const sel = selectedAddress || addrs.find(address => address.isDefault) || addrs[0] || null;
-  const step = !me ? 0 : chosenStep ?? (sel ? 2 : 1);
+  const [emailDraft, setEmailDraft] = useState<string | null>(null);
+  const deliveryEmail = emailDraft ?? addressData.data?.email ?? '';
+  const hasDeliveryEmail = deliveryEmail.trim().length <= 180 && /^[^\s@|]+@[^\s@|]+\.[^\s@|]+$/.test(deliveryEmail.trim());
+  const step = !me ? 0 : chosenStep ?? (sel && addressData.data?.email ? 2 : 1);
   const [form, setForm] = useState({ name: "", phone: "", addressLine: "", city: "", state: "", pincode: "", landmark: "" });
-  const [pay, setPay] = useState("upi");
   const [placing, setPlacing] = useState(false);
   const [pendingReceipt, setPendingReceipt] = useState<string | null>(null);
   const [paymentFailed, setPaymentFailed] = useState(false);
-  const [paymentEmail, setPaymentEmail] = useState('');
   const restoredPayment = useRef(false);
   const [order, setOrder] = useState<any>(null);
   // OTP auth state for checkout Step 1
@@ -85,9 +86,10 @@ export default function CheckoutPage() {
 
   const saveAddress = async () => {
     if (addressBusy) return;
+    if (!hasDeliveryEmail) { toast('Enter a valid email address with your delivery details'); return; }
     if (!form.name || !form.phone || !form.addressLine || !form.city || !form.state || !form.pincode) { toast("Fill all address fields"); return; }
     if (!/^\d{6}$/.test(form.pincode)) { toast("Enter valid 6-digit pincode"); return; }
-    const r = await apiFetch("/api/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ res: "address", ...form, isDefault: addrs.length === 0 }), credentials: "include" });
+    const r = await apiFetch("/api/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ res: "address", ...form, email: deliveryEmail.trim(), isDefault: addrs.length === 0 }), credentials: "include" });
     const j = await r.json();
     if (j.ok) {
       const rr = await apiFetch("/api/extra?res=addresses", { credentials: "include" }).then((x) => x.json());
@@ -95,6 +97,18 @@ export default function CheckoutPage() {
       setForm({ name: "", phone: "", addressLine: "", city: "", state: "", pincode: "", landmark: "" });
       setStep(2); toast("Address saved");
     } else toast(j.error || "Failed");
+  };
+
+  const continueWithAddress = async () => {
+    if (addressBusy) return;
+    if (!sel || !hasDeliveryEmail) { toast('Select an address and enter a valid email address'); return; }
+    try {
+      const response = await apiFetch('/api/extra', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ res: 'checkout_contact', email: deliveryEmail.trim() }) });
+      const result = await response.json();
+      if (!result.ok) throw new Error(result.error || 'Unable to save delivery contact');
+      addressData.refresh(); setStep(2);
+    } catch (error) { toast(error instanceof Error ? error.message : 'Unable to save delivery contact'); }
   };
 
   const verifyReceipt = async (orderId: string) => {
@@ -138,8 +152,8 @@ export default function CheckoutPage() {
     if (placing) return;
     if (pendingReceipt && !paymentFailed) { await verifyReceipt(pendingReceipt); return; }
     const existingId = retryOrderId || pendingReceipt;
-    if (!existingId && !sel) { toast('Select delivery address'); setStep(1); return; }
-    setPlacing(true); setErr('');
+    if (!existingId && (!sel || !hasDeliveryEmail)) { toast('Complete your delivery address and email first'); setStep(1); return; }
+    setPlacing(true); setErr(''); setStep(3);
     try {
       const fingerprint = JSON.stringify({ items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel });
       let checkoutRequest: { id: string; fingerprint: string } | null = null;
@@ -150,7 +164,7 @@ export default function CheckoutPage() {
       }
       const response = await apiFetch(existingId ? '/api/payment/retry' : '/api/payment/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify(existingId ? { orderId: existingId, email: paymentEmail } : { items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel, email: paymentEmail, idempotencyKey: checkoutRequest.id }) });
+        body: JSON.stringify(existingId ? { orderId: existingId } : { items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel, email: deliveryEmail.trim(), idempotencyKey: checkoutRequest.id }) });
       const result = await response.json();
       if (!result.ok) throw new Error(result.error || 'Unable to prepare payment');
       if (result.alreadyPaid || result.needsVerification) { await verifyReceipt(result.orderId); return; }
@@ -238,7 +252,9 @@ export default function CheckoutPage() {
                   <div className="flex items-center justify-between"><h3 className="font-serif text-xl font-bold">Step 2 — Delivery Address</h3>{addrs.length > 0 && <button onClick={() => setStep(1)} className="text-sm font-bold text-[#7a1f1f]">Change</button>}</div>
                   <SectionLoader active={addressData.pending} label="Loading delivery addresses…" compact />{addressData.error && <LoadingError error={addressData.error} retry={addressData.refresh} />}{step === 1 ? (
                     <>
-                      {addrs.length > 0 && <div className="mt-3 grid gap-2">{addrs.map((a) => (<button key={a.id} onClick={() => { setSel(a); setStep(2); }} className={`rounded-2xl border-2 p-4 text-left text-sm ${sel?.id === a.id ? "border-[#7a1f1f] bg-[#fff6e3]" : "border-[#ecdcb9]"}`}><b>{a.name}</b> • {a.phone}<br />{a.addressLine}, {a.city}, {a.state} — {a.pincode}</button>))}</div>}
+                      <label className="mt-3 block text-sm font-semibold">Email address<input type="email" autoComplete="email" required value={deliveryEmail} onChange={e => setEmailDraft(e.target.value)} placeholder="you@example.com" className="input mt-2" /></label>
+                      {addrs.length > 0 && <div className="mt-3 grid gap-2">{addrs.map((a) => (<button key={a.id} onClick={() => setSel(a)} className={`rounded-2xl border-2 p-4 text-left text-sm ${sel?.id === a.id ? "border-[#7a1f1f] bg-[#fff6e3]" : "border-[#ecdcb9]"}`}><b>{a.name}</b> • {a.phone}<br />{a.addressLine}, {a.city}, {a.state} — {a.pincode}</button>))}</div>}
+                      {addrs.length > 0 && <button onClick={continueWithAddress} disabled={addressBusy} className="btn-primary mt-3 disabled:opacity-60">{addressBusy ? <ButtonLoader label="Saving delivery details..." /> : 'Use selected address'}</button>}
                       <div className="mt-4 grid gap-3 sm:grid-cols-2">
                         <div><p className="label">Full Name</p><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" /></div>
                         <div><p className="label">Phone</p><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input" /></div>
@@ -259,14 +275,14 @@ export default function CheckoutPage() {
                   <div className="card p-6">
                     <h3 className="font-serif text-xl font-bold">Step 3 — Order Summary</h3>
                     <div className="mt-3 space-y-2">
-                      {order && pendingReceipt ? <p className="text-sm">Saved order <b>{order.orderNumber}</b> ? {money(order.total)}</p> : lines.map((l) => (
+                      {order && pendingReceipt ? <p className="text-sm">Saved order <b>{order.orderNumber}</b> Total {money(order.total)}</p> : lines.map((l) => (
                         <div key={l.id} className="flex items-center gap-3 text-sm">
                           <span className="relative h-12 w-12 shrink-0 overflow-hidden rounded-lg bg-[#f6ead2]"><SafeImg src={l.image} alt={l.name} sizes="48px" className="object-cover" /></span>
                           <span className="flex-1 font-semibold">{l.name} × {l.qty}</span><b>{money(l.price * l.qty)}</b>
                         </div>
                       ))}
                     </div>
-                    <button onClick={() => setStep(3)} className="btn-ghost mt-4">Continue to Payment</button>
+                    <button onClick={() => placeOrder()} disabled={placing} className="btn-primary mt-4 disabled:opacity-60">Continue to Payment</button>
                   </div>
                 )}
 
@@ -274,15 +290,7 @@ export default function CheckoutPage() {
                   <div className="card p-6">
                     <h3 className="font-serif text-xl font-bold">Step 4 — Payment</h3>
                     <p className="mt-1 flex items-center gap-1.5 text-xs text-stone-500"><Lock size={12} /> Secure payment. Card details are handled by PayU.</p>
-                    <div className="mt-3 grid gap-2">
-                      {[["upi", "UPI — GPay / PhonePe / Paytm"], ["card", "Credit / Debit Card"]].map(([v, l]) => (
-                        <button key={v} onClick={() => setPay(v)} className={`flex items-center gap-3 rounded-2xl border-2 p-4 text-left text-sm font-bold ${pay === v ? "border-[#7a1f1f] bg-[#fff6e3]" : "border-[#ecdcb9]"}`}>
-                          <span className={`grid h-5 w-5 place-items-center rounded-full border-2 ${pay === v ? "border-[#7a1f1f]" : "border-stone-300"}`}>{pay === v && <span className="h-2.5 w-2.5 rounded-full bg-[#7a1f1f]" />}</span>{l}
-                        </button>
-                      ))}
-                    </div>
-                    <label className="mt-3 block text-sm font-semibold">Payment email<input type="email" autoComplete="email" required value={paymentEmail} onChange={e => setPaymentEmail(e.target.value)} placeholder="you@example.com" className="input mt-2" /></label>
-                    <p className="rounded-xl bg-[#fff4de] px-3 py-2 text-[12.5px] font-semibold text-[#7a5b1e]">You will be redirected to PayU&apos;s secure checkout to select your payment method. We do not store card details.</p>
+                    <p className="mt-3 rounded-xl bg-[#fff4de] px-3 py-2 text-[12.5px] font-semibold text-[#7a5b1e]">Choose your payment method on PayU. After payment, you will return here for order confirmation.</p>
                     {err && (
                       <div className="mt-2 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">
                         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
@@ -291,7 +299,7 @@ export default function CheckoutPage() {
                       </div>
                     )}
                     <button onClick={() => placeOrder()} disabled={placing} className="btn-primary mt-4 w-full !py-4 !text-[15px] disabled:opacity-60">
-                      {placing ? <ButtonLoader label="Processing payment…" /> : pendingReceipt ? (paymentFailed ? "Retry payment" : "Check payment status") : <><Lock size={15} /> Pay {money(total)}</>}
+                      {placing ? <ButtonLoader label="Opening PayU..." /> : pendingReceipt ? (paymentFailed ? "Retry payment" : "Check payment status") : <><Lock size={15} /> Continue to PayU</>}
                     </button>
                   </div>
                 )}
