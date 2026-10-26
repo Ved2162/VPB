@@ -37,7 +37,7 @@ test('pending return and refresh never display confirmation; a later verified ca
   let status = 'pending';
   await page.route('**/api/payment/payu/verify', route => route.fulfill({ json: { ok: true, orderId, paymentStatus: status } }));
   await page.goto('/checkout?paymentOrder=' + orderId);
-  await expect(page.getByText(/Payment is awaiting confirmation/)).toBeVisible();
+  await expect(page.getByText(/PayU has not confirmed a final payment result yet/)).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Order Confirmed!', exact: true })).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole('button', { name: 'Check payment status', exact: true })).toBeVisible();
@@ -65,4 +65,30 @@ test('cancelled payment offers retry on the same order; verification errors neve
   await page.reload();
   await expect(page.getByText('Payment verification failed', { exact: true })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'Order Confirmed!', exact: true })).toHaveCount(0);
+});
+
+test('an open checkout explains pending state and offers a fresh attempt after verified cancellation', async ({ page }) => {
+  let cancelled = false;
+  await page.route('**/api/payment/payu/verify', route => route.fulfill({ json: {
+    ok: true, orderId, paymentStatus: cancelled ? 'failed' : 'pending', providerState: cancelled ? 'usercancelled' : 'initiated',
+  } }));
+  await page.goto('/checkout?paymentOrder=' + orderId);
+  await expect(page.getByText(/This checkout is still open at PayU/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Retry payment', exact: true })).toHaveCount(0);
+  cancelled = true;
+  await page.getByRole('button', { name: 'Check payment status', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Retry payment', exact: true })).toBeVisible();
+  let retriedOrder = '', postedId = '';
+  await page.route('**/api/payment/retry', async route => {
+    retriedOrder = route.request().postDataJSON().orderId;
+    await route.fulfill({ json: { ok: true, orderId, action: 'https://test.payu.in/_payment', fields: { txnid: 'b'.repeat(24), amount: '100.00' } } });
+  });
+  await page.route('https://test.payu.in/_payment', async route => {
+    postedId = new URLSearchParams(route.request().postData() || '').get('txnid') || '';
+    await route.fulfill({ contentType: 'text/html', body: '<h1>PayU fixture checkout</h1>' });
+  });
+  await page.getByRole('button', { name: 'Retry payment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'PayU fixture checkout', exact: true })).toBeVisible();
+  expect(retriedOrder).toBe(orderId);
+  expect(postedId).toBe('b'.repeat(24));
 });

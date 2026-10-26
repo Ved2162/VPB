@@ -109,7 +109,7 @@ export default function CheckoutPage() {
       setOrder(result.order);
       setPaymentFailed(confirmation.paymentStatus === 'failed');
       if (confirmation.paymentStatus !== 'paid') {
-        setErr(confirmation.paymentStatus === 'failed' ? 'Payment failed or was cancelled. You can retry the same order.' : 'Payment is awaiting confirmation. Check again shortly or visit My Orders.');
+        setErr(confirmation.paymentStatus === 'failed' ? 'Payment failed or was cancelled. You can retry the same order.' : confirmation.providerState === 'initiated' ? 'This checkout is still open at PayU. Complete or cancel it in the PayU tab, then check payment status. A new attempt becomes available after PayU confirms it has ended.' : 'PayU has not confirmed a final payment result yet. Check payment status shortly. If you have not paid, wait for PayU to close this attempt before retrying.');
         return;
       }
       setPendingReceipt(null); setStep(4); clear();

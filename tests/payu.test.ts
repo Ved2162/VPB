@@ -169,13 +169,47 @@ test('retry verifies previous attempt and creates one new transaction only after
   expect(await saved(f)).toMatchObject({ payuTxnId: next.fields.txnid, paymentStatus: 'pending' });
 });
 
-test('pending retry reuses attempt; late failure cannot reverse a capture', async () => {
+test('pending retry checks the existing attempt; late failure cannot reverse a capture', async () => {
   const f = await fixture(); provider(f, { status: 'pending', unmappedstatus: 'pending' });
   const response = await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId }, f.user));
-  expect((await response.json()).fields.txnid).toBe(f.checkout.fields.txnid);
+  const pending = await response.json();
+  expect(pending).toMatchObject({ needsVerification: true, orderId: f.checkout.orderId });
+  expect(pending).not.toHaveProperty('fields');
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(1);
+  const repeated = await (await create.POST(request('/api/payment/create', f.body, f.user))).json();
+  expect(repeated).toEqual({ ok: true, needsVerification: true, orderId: f.checkout.orderId });
   provider(f); await reconcilePayu(f.checkout.fields.txnid);
   provider(f, { status: 'failure', unmappedstatus: 'failed' }); await reconcilePayu(f.checkout.fields.txnid);
   expect((await saved(f)).paymentStatus).toBe('paid');
+});
+
+test.each(['failure', 'failed', 'FAILED'])('terminal PayU %s with userCancelled permits a fresh ID on the same order', async status => {
+  const f = await fixture(); provider(f, { status, unmappedstatus: 'userCancelled' });
+  const result = await reconcilePayu(f.checkout.fields.txnid);
+  expect(result.paymentStatus).toBe('failed');
+  expect(result.paymentData?.payuVerification).toMatchObject({ status: status.toLowerCase(), state: 'usercancelled' });
+  const response = await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId }, f.user));
+  expect(response.status).toBe(200);
+  const next = await response.json();
+  expect(next.orderId).toBe(f.checkout.orderId);
+  expect(next.fields.txnid).not.toBe(f.checkout.fields.txnid);
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(2);
+});
+
+test.each(['initiated', 'in progress', 'auth', 'pending'])('PayU %s remains pending and never returns a duplicate checkout form', async state => {
+  const f = await fixture(); provider(f, { status: state === 'auth' ? 'success' : 'pending', unmappedstatus: state });
+  const response = await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId }, f.user));
+  expect(await response.json()).toEqual({ ok: true, needsVerification: true, orderId: f.checkout.orderId });
+  const checked = await (await verify.POST(request('/api/payment/payu/verify', { orderId: f.checkout.orderId }, f.user))).json();
+  expect(checked).toMatchObject({ paymentStatus: 'pending', providerState: state });
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(1);
+});
+
+test('a capture discovered during retry returns the paid order without starting another attempt', async () => {
+  const f = await fixture(); provider(f);
+  const response = await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId }, f.user));
+  expect(await response.json()).toEqual({ ok: true, alreadyPaid: true, orderId: f.checkout.orderId });
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(1);
 });
 
 test('return uses 303 and revisits resolve via owned order; unauthorized access and admin payment edits are rejected', async () => {

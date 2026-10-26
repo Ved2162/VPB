@@ -34,7 +34,10 @@ export async function POST(req: Request) {
     if (!account?.active || account.role === 'delivery' || account.sessionVersion !== me.sessionVersion) throw new DeliveryError('Session expired. Please log in again', 401);
     const o = await tx.select().from(orders).where(eq(orders.id, orderId)).for("update");
     if (!o.length || o[0].userId !== me.id) return NextResponse.json({ ok: false, error: "Order not found" }, { status: 404 });
-    if (["paid", "refunded"].includes(o[0].paymentStatus)) return NextResponse.json({ ok: false, error: "Order already paid" }, { status: 400 });
+    if (["paid", "refunded"].includes(o[0].paymentStatus)) return NextResponse.json({ ok: true, alreadyPaid: true, orderId: o[0].id });
+    // PayU requires a new ID for a new checkout request. Never resubmit a
+    // provider-pending ID or create a replacement while its result is unknown.
+    if (o[0].payuTxnId && o[0].paymentStatus !== 'failed') return NextResponse.json({ ok: true, needsVerification: true, orderId: o[0].id });
 
     if (o[0].orderStatus !== 'placed') throw new DeliveryError('This order cannot be reopened for payment', 409);
 

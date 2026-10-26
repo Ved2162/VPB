@@ -22,6 +22,8 @@ export async function preparePayuCheckout(tx: Transaction, order: Order, email: 
   if (attempt && (attempt.environment !== config.environment || attempt.merchantKey !== config.key || attempt.amount !== order.total * 100 || attempt.orderId !== order.id))
     throw new DeliveryError('Payment configuration changed. Contact support for reconciliation.', 409);
   if (attempt?.status === 'paid') throw new DeliveryError('Order is already paid', 409);
+  if (attempt?.status === 'pending' && attempt.verifiedAt)
+    return { ok: true, needsVerification: true, orderId: order.id };
   if (!attempt || attempt.status === 'failed' && attempt.verifiedAt) {
     const firstname = order.customerName || order.shippingAddress.name;
     if (!firstname || firstname.includes('|')) throw new DeliveryError('Invalid payment name');
@@ -60,23 +62,29 @@ export async function reconcilePayu(txnid: string, callback?: Record<string, str
     detail.productinfo !== PAYU_PRODUCT || detail.currency && detail.currency !== 'INR') throw new DeliveryError('PayU verification does not match the order');
   if (callback?.mihpayid && detail.mihpayid !== callback.mihpayid) throw new DeliveryError('PayU payment reference mismatch');
   if (detail.additional_charges && Number(detail.additional_charges) !== 0) throw new DeliveryError('Unexpected PayU charges');
-  if (detail.status === 'success' && detail.unmappedstatus === 'captured') {
+  const providerStatus = (detail.status || '').trim().toLowerCase();
+  const providerState = (detail.unmappedstatus || '').trim().toLowerCase();
+  if (providerStatus === 'success' && providerState === 'captured') {
     if (!/^\d{1,80}$/.test(detail.mihpayid || '')) throw new DeliveryError('Invalid PayU payment reference');
     const result = await finalizePayment({ provider: 'payu', orderId: txnid, paymentId: detail.mihpayid, amount: attempt.amount, currency: 'INR', method: 'payu' });
     if (!result.order.paymentData?.stockReviewRequired && result.order.orderStatus !== 'cancelled') scheduleOrderNotification(result.order.id);
     return result.order;
   }
-  const failed = detail.status === 'failure' && ['failed', 'usercancelled', 'bounced', 'dropped'].includes((detail.unmappedstatus || '').toLowerCase());
+  const failed = ['failure', 'failed'].includes(providerStatus) && ['failed', 'usercancelled', 'bounced', 'dropped'].includes(providerState);
   return db.transaction(async tx => {
     const [order] = await tx.select().from(orders).where(eq(orders.id, attempt.orderId)).for('update');
     if (!order) throw new DeliveryError('Order not found', 404);
     const [current] = await tx.select().from(payuAttempts).where(eq(payuAttempts.txnId, txnid)).for('update');
     if (current.status !== 'paid') await tx.update(payuAttempts).set({ status: failed ? 'failed' : 'pending', verifiedAt: new Date() }).where(eq(payuAttempts.txnId, txnid));
-    if (failed && current.status !== 'paid' && order.payuTxnId === txnid && !['paid', 'refunded'].includes(order.paymentStatus)) {
-      const [updated] = await tx.update(orders).set({ paymentStatus: 'failed', updatedAt: new Date() }).where(eq(orders.id, order.id)).returning();
-      await releaseStock(tx, order.id);
-      return updated;
-    }
-    return order;
+    if (current.status === 'paid' || order.payuTxnId !== txnid || ['paid', 'refunded'].includes(order.paymentStatus)) return order;
+    const safeStatus = ['success', 'failure', 'failed', 'pending'].includes(providerStatus) ? providerStatus : 'unknown';
+    const safeState = ['initiated', 'in progress', 'pending', 'auth', 'captured', 'failed', 'usercancelled', 'bounced', 'dropped', 'autorefund'].includes(providerState) ? providerState : 'unknown';
+    const [updated] = await tx.update(orders).set({
+      paymentStatus: failed ? 'failed' : 'pending',
+      paymentData: { ...order.paymentData, payuVerification: { txnid, status: safeStatus, state: safeState, checkedAt: new Date().toISOString() } },
+      updatedAt: new Date(),
+    }).where(eq(orders.id, order.id)).returning();
+    if (failed) await releaseStock(tx, order.id);
+    return updated;
   });
 }
