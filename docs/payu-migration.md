@@ -51,6 +51,7 @@ For the approved public application origin `<origin>`:
 | Failure `furl` and cancellation `curl` | `<origin>/api/payment/payu/return` |
 | Successful/Failed payment notifications | `<origin>/api/payment/payu/webhook` |
 | Authenticated customer reconciliation | POST `<origin>/api/payment/payu/verify` with internal `orderId` |
+| Secret-free configuration/schema readiness | GET `<origin>/api/payment/payu/status` |
 | Customer result/recovery | `<origin>/checkout?paymentOrder=<internal-order-uuid>` |
 | Retained Razorpay webhook | `<origin>/api/payment/webhook` |
 

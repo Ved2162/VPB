@@ -13,6 +13,7 @@ import * as retry from '../src/app/api/payment/retry/route';
 import * as verify from '../src/app/api/payment/payu/verify/route';
 import * as webhook from '../src/app/api/payment/payu/webhook/route';
 import * as returned from '../src/app/api/payment/payu/return/route';
+import * as paymentStatus from '../src/app/api/payment/payu/status/route';
 import * as orderApi from '../src/app/api/orders/[id]/route';
 import { reconcilePayu } from '../src/lib/payu-payments';
 import { amountInPaise, requestHash, sha512, validResponseHash } from '../src/lib/payu';
@@ -68,6 +69,18 @@ test('documented hash ordering, additional charges, malformed hashes and exact d
   expect(validResponseHash({ ...r, hash: 'a'.repeat(127) }, 's')).toBe(false);
   expect(amountInPaise('12.30')).toBe(1230);
   for (const value of ['1e2', '-1', '0', '1.001', 'Infinity']) expect(() => amountInPaise(value)).toThrow();
+});
+
+test('payment readiness checks configuration and schema without exposing secrets or creating attempts', async () => {
+  const before = await database.db.select().from(schema.payuAttempts);
+  const response = await paymentStatus.GET();
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ ok: true, provider: 'payu', environment: 'test' });
+  expect(await database.db.select().from(schema.payuAttempts)).toHaveLength(before.length);
+  process.env.PAYU_ENABLED = 'false';
+  const disabled = await paymentStatus.GET();
+  expect(disabled.status).toBe(503);
+  expect(JSON.stringify(await disabled.json())).not.toContain(process.env.PAYU_MERCHANT_SALT);
 });
 
 test('backend pricing and repeated concurrent checkout create one order and one transaction', async () => {

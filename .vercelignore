@@ -1,0 +1,25 @@
+# Deploy application source, never local credentials or diagnostic artifacts.
+.git
+.next
+.next-*
+.vercel
+node_modules
+.audit-local
+.agents
+.codex
+.aws
+.env
+.env.*
+!.env.example
+**/*.env
+**/.env
+**/.env.*
+tmp
+test-results
+playwright-report
+coverage
+*.log
+*.tsbuildinfo
+*.cookie
+*.cookies
+cj.txt
