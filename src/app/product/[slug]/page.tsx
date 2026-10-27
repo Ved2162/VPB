@@ -71,7 +71,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
       <div className="mt-5 grid gap-10 lg:grid-cols-2">
         <div>
           <div className="relative aspect-square w-full cursor-zoom-in overflow-hidden rounded-[22px] border border-[#ecdcb9] bg-white" onClick={() => setZoom(true)}>
-            <SafeImg src={images[img]} alt={p.name} sizes="50vw" priority className="object-cover transition duration-500 hover:scale-[1.04]" />
+            <SafeImg src={images[img]} alt={p.name} sizes="(max-width:1024px) 100vw, 50vw" priority className="object-cover transition duration-500 hover:scale-[1.04]" />
             {off > 0 && <span className="absolute left-4 top-4 rounded-full bg-[#7a1f1f] px-3 py-1 text-xs font-bold text-white">-{off}% OFF</span>}
           </div>
           <div className="mt-3 grid grid-cols-4 gap-3">

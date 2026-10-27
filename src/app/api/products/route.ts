@@ -2,7 +2,7 @@ import { publicProduct, reviewRating, reviewCount } from '@/lib/catalog';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { products, categories } from "@/db/schema";
-import { and, or, ilike, eq, gte, lte, desc, asc, sql } from "drizzle-orm";
+import { and, or, ilike, eq, gte, lte, desc, asc } from "drizzle-orm";
 
 export async function GET(req: Request) {
   try {
@@ -22,9 +22,7 @@ export async function GET(req: Request) {
       conds.push(or(ilike(products.name, `%${q}%`), ilike(products.brand, `%${q}%`), ilike(products.reelCount, `%${q}%`), ilike(products.sku, `%${q}%`), ilike(products.description, `%${q}%`))!);
     }
     if (cat) {
-      const c = await db.select().from(categories).where(eq(categories.slug, cat));
-      if (c.length) conds.push(eq(products.categoryId, c[0].id));
-      else conds.push(sql`1=0`);
+      conds.push(eq(categories.slug, cat));
     }
     if (cord) conds.push(eq(products.cordCount, Number(cord)));
     if (min) conds.push(gte(products.price, min));
@@ -40,9 +38,8 @@ export async function GET(req: Request) {
     if (sort === "rating") order = desc(reviewRating);
     if (sort === "name") order = asc(products.name);
 
-    const rows = await db.select({ p: products, c: categories }).from(products).leftJoin(categories, eq(products.categoryId, categories.id)).where(and(...conds)).orderBy(order).limit(limit);
-    const stats = await db.select({ id: products.id, rating: reviewRating, reviewCount }).from(products).where(publicProduct);
-    const data = rows.map((r) => ({ ...r.p, ...stats.find(s => s.id === r.p.id), categoryName: r.c?.name || null, categorySlug: r.c?.slug || null }));
+    const rows = await db.select({ p: products, c: categories, rating: reviewRating, reviewCount }).from(products).leftJoin(categories, eq(products.categoryId, categories.id)).where(and(...conds)).orderBy(order).limit(limit);
+    const data = rows.map((r) => ({ ...r.p, rating: r.rating, reviewCount: r.reviewCount, categoryName: r.c?.name || null, categorySlug: r.c?.slug || null }));
     return NextResponse.json({ ok: true, products: data });
   } catch (e: any) {
     return NextResponse.json({ ok: false, error: "Unable to complete this request. Please retry.", products: [] }, { status: 500 });

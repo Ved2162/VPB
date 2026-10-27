@@ -1,6 +1,7 @@
 "use client";
 import { ProductSpecifications } from '@/components/product-specifications';
 import { productDisplayName } from '@/lib/product-specs';
+import { responsiveProductImage } from '@/lib/product-images';
 import { BrandedLink as Link } from "@/components/loading";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -24,17 +25,21 @@ export function Logo({ light = false }: { light?: boolean }) {
   );
 }
 
-export function SafeImg({ src, alt, className, sizes, priority }: { src?: string | null; alt?: string; className?: string; sizes?: string; priority?: boolean }) {
-  const [failed, setFailed] = useState(false);
-  const imageSrc = failed || !src ? "/images/manjha/m01.png" : src;
+export function SafeImg({ src, alt, className, sizes, priority, onLoad }: { src?: string | null; alt?: string; className?: string; sizes?: string; priority?: boolean; onLoad?: () => void }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const imageSrc = !src || failedSrc === src ? "/images/manjha/m01.png" : src;
+  const responsive = responsiveProductImage(imageSrc);
   return (
     <img
-      src={imageSrc}
+      src={responsive.src}
+      srcSet={responsive.srcSet}
       alt={alt || "VPB — Verai Patang Bhandar"}
-      sizes={sizes}
+      sizes={sizes || '100vw'}
+      fetchPriority={priority ? 'high' : 'auto'}
       loading={priority ? "eager" : "lazy"}
       decoding="async"
-      onError={() => { if (!failed) setFailed(true); }}
+      onLoad={onLoad}
+      onError={() => { if (src && failedSrc !== src) setFailedSrc(src); }}
       className={`absolute inset-0 h-full w-full ${className || "object-cover"}`}
     />
   );
@@ -162,18 +167,20 @@ export function Stars({ v = 4.5, size = 14 }: { v?: number | string; size?: numb
   return <span className="inline-flex items-center gap-0.5">{[1, 2, 3, 4, 5].map((i) => (<Star key={i} size={size} className={i <= Math.round(n) ? "fill-[#c9a24b] text-[#c9a24b]" : "text-stone-300"} />))}</span>;
 }
 
-export function ProductCard({ p }: { p: any }) {
+export function ProductCard({ p, priority = false }: { p: any; priority?: boolean }) {
   const { add } = useCart();
   const { toast } = useToast();
+  const [preview, setPreview] = useState(false);
+  const [readyPreview, setReadyPreview] = useState<string | null>(null);
   const img = p.images?.[0] || "/images/manjha/m01.png";
   const img2 = p.images?.[1] || img;
   const off = p.comparePrice && p.comparePrice > p.price ? Math.round((1 - p.price / p.comparePrice) * 100) : 0;
   const out = p.stockStatus === "out_of_stock" || p.stockQuantity <= 0;
   return (
-    <div data-product-card={p.id} className="reveal group relative overflow-hidden rounded-[18px] border border-[#ecdcb9] bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(43,20,13,.14)]">
+    <div data-product-card={p.id} onPointerEnter={event => { if (event.pointerType !== 'touch') setPreview(true); }} onFocusCapture={() => setPreview(true)} className="reveal group relative overflow-hidden rounded-[18px] border border-[#ecdcb9] bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(43,20,13,.14)]">
       <Link href={`/product/${p.slug}`} tabIndex={-1} aria-hidden="true" className="relative block aspect-[4/4.4] overflow-hidden bg-[#f6ead2]">
-        <SafeImg src={img} alt={p.name} sizes="(max-width:768px) 50vw, 25vw" className="object-cover transition-all duration-700 group-hover:scale-[1.06] group-hover:opacity-0" />
-        <SafeImg src={img2} alt={p.name} sizes="(max-width:768px) 50vw, 25vw" className="object-cover opacity-0 transition-all duration-700 group-hover:scale-[1.06] group-hover:opacity-100" />
+        <SafeImg src={img} alt={p.name} priority={priority} sizes="(max-width:768px) 50vw, 25vw" className={`object-cover transition-all duration-700 group-hover:scale-[1.06] ${readyPreview === img2 ? 'group-hover:opacity-0' : ''}`} />
+        {preview && img2 !== img && <SafeImg src={img2} alt={p.name} sizes="(max-width:768px) 50vw, 25vw" onLoad={() => setReadyPreview(img2)} className={`object-cover opacity-0 transition-all duration-700 group-hover:scale-[1.06] ${readyPreview === img2 ? 'group-hover:opacity-100' : ''}`} />}
         {off > 0 && <span className="absolute left-3 top-3 rounded-full bg-[#7a1f1f] px-2.5 py-1 text-[11px] font-bold text-[#f7ead7]">-{off}%</span>}
         {p.bestseller && <span className="absolute right-3 top-3 rounded-full bg-[#1c0f0a] px-2.5 py-1 text-[11px] font-bold text-[#f0d9a8]">Bestseller</span>}
         {out && <span className="absolute inset-x-0 bottom-0 bg-black/60 py-1.5 text-center text-xs font-bold uppercase tracking-widest text-white">Out of stock</span>}

@@ -1,4 +1,14 @@
 export const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+export const PRODUCT_IMAGE_WIDTHS = [320, 640, 960, 1440] as const;
+
+// Only our immutable public uploads use the resize endpoint. External URLs stay unchanged.
+export function responsiveProductImage(src: string) {
+  if (!/^\/api\/images\/[a-f0-9]{64}$/.test(src)) return { src, srcSet: undefined };
+  return {
+    src: `${src}?w=640&v=1`,
+    srcSet: PRODUCT_IMAGE_WIDTHS.map(width => `${src}?w=${width}&v=1 ${width}w`).join(', '),
+  };
+}
 
 export function imageContentType(bytes: Uint8Array): string | null {
   if (bytes.length < 12) return null;

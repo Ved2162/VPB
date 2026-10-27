@@ -1,3 +1,4 @@
+import { ViewportVideo } from '@/components/viewport-video';
 import { BrandedLink as Link } from "@/components/loading";
 import { ArrowRight, AtSign } from "lucide-react";
 import { INSTAGRAM_URL, WORKSHOP_IMAGES } from "@/lib/data";
@@ -21,7 +22,7 @@ export default function Craft() {
           <p className="mt-3 max-w-xl text-[#e9d5ae]">From @verai_patang_bhandar — real karigars, real paste, real Bareilly mornings.</p>
           </div>
           <div className="mx-auto aspect-[9/16] w-full max-w-[340px] overflow-hidden rounded-[24px] border border-[#c9a24b]/25 bg-black shadow-[0_24px_70px_rgba(0,0,0,0.35)]">
-            <video autoPlay muted loop playsInline width={1080} height={1920} aria-label="VPB craftsmen making Bareilly manjha" poster={WORKSHOP_IMAGES[3]} className="h-full w-full object-contain"><source src="/videos/craftsmanship.mp4" type="video/mp4" /></video>
+            <ViewportVideo src="/videos/craftsmanship.mp4" width={1080} height={1920} label="VPB craftsmen making Bareilly manjha" poster={WORKSHOP_IMAGES[3]} className="h-full w-full object-contain" />
           </div>
         </div>
       </section>

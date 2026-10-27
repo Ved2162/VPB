@@ -1,5 +1,9 @@
 import { afterAll, beforeAll, expect, test, vi } from 'vitest';
 import { readFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import sharp from 'sharp';
+import { NextRequest } from 'next/server';
+import { proxy } from '../src/proxy';
 import { eq } from 'drizzle-orm';
 import { createTestDatabase } from './database';
 import * as schema from '../src/db/schema';
@@ -62,4 +66,51 @@ test('upload rejects anonymous, cross-origin, unsupported and oversized requests
 
 test('editing a missing product cannot report a successful save', async () => {
   expect((await admin.POST(request({ res: 'product', id: '00000000-0000-4000-8000-000000000099', data: { name: 'Missing', price: 100, sku: 'MISSING' } }))).status).toBe(404);
+});
+
+test('responsive delivery reduces bytes, preserves originals, and coalesces database reads', async () => {
+  const original = await sharp(png).resize({ width: 900 }).jpeg({ quality: 95 }).toBuffer();
+  const id = createHash('sha256').update(original).digest('hex');
+  await database.db.insert(schema.productImages).values({ id, contentType: 'image/jpeg', data: original.toString('base64') });
+  const select = vi.spyOn(database.db, 'select');
+  try {
+    const [small, large] = await Promise.all([320, 640].map(width => download(new Request(`http://localhost/api/images/${id}?w=${width}&v=1`), { params: Promise.resolve({ id }) })));
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(small.headers.get('content-type')).toBe('image/webp');
+    expect(small.headers.get('cache-control')).toContain('immutable');
+    const bytes = Buffer.from(await small.arrayBuffer());
+    expect(bytes.length).toBeLessThan(original.length / 2);
+    expect((await sharp(bytes).metadata()).width).toBe(320);
+    expect((await sharp(Buffer.from(await large.arrayBuffer())).metadata()).width).toBe(640);
+    const unmodified = await download(new Request(`http://localhost/api/images/${id}`), { params: Promise.resolve({ id }) });
+    expect(Buffer.from(await unmodified.arrayBuffer())).toEqual(original);
+    const cached = await download(new Request(`http://localhost/api/images/${id}?w=320&v=1`, { headers: { 'if-none-match': small.headers.get('etag')! } }), { params: Promise.resolve({ id }) });
+    expect(cached.status).toBe(304);
+    expect(select).toHaveBeenCalledTimes(1);
+  } finally { select.mockRestore(); }
+});
+
+test('only supported image widths are accepted, and missing uploads remain missing', async () => {
+  const id = 'f'.repeat(64);
+  for (const width of ['0', '100000', 'NaN', '-1']) {
+    expect((await download(new Request(`http://localhost/api/images/${id}?w=${width}`), { params: Promise.resolve({ id }) })).status).toBe(400);
+  }
+  expect((await download(new Request(`http://localhost/api/images/${id}?w=320`), { params: Promise.resolve({ id }) })).status).toBe(404);
+});
+
+test('legacy 30-megapixel catalog photos receive thumbnails without changing upload limits', async () => {
+  const original = await sharp({ create: { width: 6720, height: 4480, channels: 3, background: '#b09070' } }).jpeg().toBuffer();
+  const id = createHash('sha256').update(original).digest('hex');
+  await database.db.insert(schema.productImages).values({ id, contentType: 'image/jpeg', data: original.toString('base64') });
+  const response = await download(new Request(`http://localhost/api/images/${id}?w=320`), { params: Promise.resolve({ id }) });
+  expect(response.headers.get('content-type')).toBe('image/webp');
+  expect((await sharp(Buffer.from(await response.arrayBuffer())).metadata()).width).toBe(320);
+});
+
+test('proxy allows immutable image caching while keeping every other API response no-store', () => {
+  const id = 'a'.repeat(64);
+  expect(proxy(new NextRequest(`http://localhost/api/images/${id}?w=320`)).headers.has('cache-control')).toBe(false);
+  for (const path of ['/api/auth', '/api/products', '/api/admin', '/api/orders', '/api/images/not-an-image-id']) {
+    expect(proxy(new NextRequest('http://localhost' + path)).headers.get('cache-control')).toBe('no-store');
+  }
 });

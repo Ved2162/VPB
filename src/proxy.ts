@@ -23,7 +23,10 @@ export function proxy(req: NextRequest) {
         if (Number(req.headers.get('content-length') || 0) > limit) return NextResponse.json({ ok: false, error: 'Request too large' }, { status: 413 });
       } catch { return NextResponse.json({ ok: false, error: 'Cross-origin request rejected' }, { status: 403 }); }
     }
-    const res = NextResponse.next(); res.headers.set('Cache-Control', 'no-store'); return res;
+    const res = NextResponse.next();
+    // Only immutable public image GETs may be cached; all other API data stays private/no-store.
+    if (!(['GET', 'HEAD'].includes(req.method) && /^\/api\/images\/[a-f0-9]{64}$/.test(pathname))) res.headers.set('Cache-Control', 'no-store');
+    return res;
   }
   const token = req.cookies.get("vpb_token")?.value;
   const payload = token ? verifyToken(token) : null;

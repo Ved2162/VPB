@@ -1,4 +1,5 @@
 import { publicProduct, publicCategory, reviewRating, reviewCount } from '@/lib/catalog';
+import { ViewportVideo } from '@/components/viewport-video';
 import { SampleReviews } from '@/components/sample-reviews';
 import { BrandedLink as Link } from "@/components/loading";
 import { ArrowRight, AtSign, ShieldCheck, Star, Truck, BadgeCheck, Quote } from "lucide-react";
@@ -12,8 +13,10 @@ export const dynamic = "force-dynamic";
 
 async function getData() {
   try {
-    const feat = await db.select({ ...getTableColumns(products), rating: reviewRating, reviewCount }).from(products).where(publicProduct);
-    const cats = await db.select().from(categories).where(publicCategory);
+    const [feat, cats] = await Promise.all([
+      db.select({ ...getTableColumns(products), rating: reviewRating, reviewCount }).from(products).where(publicProduct),
+      db.select().from(categories).where(publicCategory),
+    ]);
     return { products: feat, categories: cats.filter((c) => c.active) };
   } catch {
     return { products: [], categories: [] };
@@ -31,9 +34,7 @@ export default async function Home() {
     <div>
       {/* HERO */}
       <section className="relative flex min-h-[92vh] items-end overflow-hidden bg-[#170c07] sm:items-center">
-        <video autoPlay muted loop playsInline poster={HERO_POSTER} className="absolute inset-0 h-full w-full object-cover">
-          <source src={HERO_VIDEO} type="video/mp4" />
-        </video>
+        <ViewportVideo src={HERO_VIDEO} poster={HERO_POSTER} className="absolute inset-0 h-full w-full object-cover" />
         <div className="absolute inset-0 bg-gradient-to-t from-[#170c07] via-[#170c07]/45 to-[#170c07]/25" />
         <div className="absolute inset-0 bg-gradient-to-r from-[#170c07]/70 via-transparent to-transparent" />
         <div className="relative mx-auto w-full max-w-7xl px-4 pb-16 pt-28 sm:px-6 sm:pb-24">

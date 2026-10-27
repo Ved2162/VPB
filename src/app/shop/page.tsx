@@ -136,7 +136,7 @@ function ShopInner() {
           ) : products.length === 0 ? (
             <div className="card p-10 text-center"><p className="font-serif text-xl font-bold">No products found</p><p className="mt-1 text-sm text-stone-500">Try a different search or clear filters.</p><button onClick={clearAll} className="btn-primary mt-4">Clear Filters</button></div>
           ) : (
-            <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">{products.map((p) => (<ProductCard key={p.id} p={p} />))}</div>
+            <div className="grid grid-cols-2 gap-4 xl:grid-cols-3">{products.map((p, index) => (<ProductCard key={p.id} p={p} priority={index < 2} />))}</div>
           )}
         </div>
       </div>
