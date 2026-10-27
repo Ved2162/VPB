@@ -14,7 +14,8 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" data-scroll-behavior="smooth">
-      <body className="min-h-screen">
+      {/* Extensions may add body attributes before hydration; keep descendant checks active. */}
+      <body className="min-h-screen" suppressHydrationWarning>
         <Providers>
           <RevealInit />
           <Navbar />

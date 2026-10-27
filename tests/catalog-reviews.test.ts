@@ -9,6 +9,19 @@ import { publicReviews } from '../src/lib/reviews';
 let database: Awaited<ReturnType<typeof createTestDatabase>>;
 beforeAll(async () => { database = await createTestDatabase(); state.db = database.db; });
 afterAll(async () => { await database.pg.close(); });
+
+test('official product names and recognizable fragments match through existing catalog search', async () => {
+  await database.db.insert(schema.products).values([
+    { name: 'VAYUSHASTRA Sankal 8 (4 REEL)', slug: 'official-sankal', sku: 'OFFICIAL-SANKAL', price: 2800 },
+    { name: 'THE ROCK BREAKER (Sankal 8, 2 REEL)', slug: 'official-rock', sku: 'OFFICIAL-ROCK', price: 1700 },
+    { name: 'VAYUSHASTRA PANDA 5 (3 REEL)', slug: 'official-panda', sku: 'OFFICIAL-PANDA', price: 2100 },
+  ]);
+  for (const [q, sku] of [['VAYUSHASTRA Sankal 8', 'OFFICIAL-SANKAL'], ['Sankal 8', 'OFFICIAL-SANKAL'], ['THE ROCK BREAKER', 'OFFICIAL-ROCK'], ['VAYUSHASTRA PANDA 5', 'OFFICIAL-PANDA'], ['PANDA 5', 'OFFICIAL-PANDA']]) {
+    const result = await (await catalog(new Request('http://localhost/api/products?q=' + encodeURIComponent(q)))).json();
+    expect(result.products.map((p: { sku: string }) => p.sku)).toContain(sku);
+  }
+  await database.pg.exec("DELETE FROM products WHERE sku LIKE 'OFFICIAL-%'");
+});
 test('public catalog hides legacy kites without deleting them or unrelated accessories', async () => {
   const [cat] = await database.db.insert(schema.categories).values({ name: 'Kites', slug: 'kites' }).returning();
   await database.db.insert(schema.products).values([

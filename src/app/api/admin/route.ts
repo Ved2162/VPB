@@ -1,4 +1,5 @@
 import { readJson, isUuid } from '@/lib/http-security';
+import { validateSpecifications } from '@/lib/product-specs';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { deliveryAudit, reviews, products, categories, orders, orderItems, users, banners, siteContent } from "@/db/schema";
@@ -93,8 +94,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: true });
     }
     if (res === "product") {
-      const d = body.data;
-      if (!d || typeof d.name !== "string" || d.name.length > 200 || !Number.isSafeInteger(Number(d.price)) || Number(d.price) < 1 || !d.sku || !Number.isInteger(Number(d.stockQuantity ?? 10)) || Number(d.stockQuantity ?? 10) < 0) return NextResponse.json({ ok: false, error: "Name, price, SKU required" }, { status: 400 });
+      let d = body.data;
+      if (!d || typeof d !== 'object' || Array.isArray(d)) throw new DeliveryError('Product data required');
+      if (body.id) {
+        const [existing] = await tx.select().from(products).where(eq(products.id, body.id)).for('update');
+        if (!existing) throw new DeliveryError('Product not found', 404);
+        d = { ...existing, ...d };
+      }
+      try { if (d.specs !== undefined) d.specs = validateSpecifications(d.specs); }
+      catch (error) { throw new DeliveryError((error as Error).message); }
+      for (const [field, max] of [['brand', 120], ['reelCount', 40], ['length', 80]] as const) {
+        if (d[field] != null && (typeof d[field] !== 'string' || d[field].length > max)) throw new DeliveryError(`${field} must be at most ${max} characters.`);
+      }
+      if (!d || typeof d.name !== "string" || !d.name.trim() || d.name.length > 200 || !Number.isSafeInteger(Number(d.price)) || Number(d.price) < 1 || !d.sku || !Number.isInteger(Number(d.stockQuantity ?? 10)) || Number(d.stockQuantity ?? 10) < 0) return NextResponse.json({ ok: false, error: "Name, price, SKU required" }, { status: 400 });
       const slug = d.slug || slugify(d.name);
       if (d.active !== false && /\b(kites?|patangs?)\b/i.test(d.name) && !/\b(manjha|saddi|charkhi)\b/i.test(d.name)) throw new DeliveryError('Kite products must remain inactive');
       if (d.categoryId && d.active !== false) {
@@ -104,7 +116,7 @@ export async function POST(req: Request) {
       const images = Array.isArray(d.images) ? d.images.filter(Boolean) : d.image ? [d.image] : [];
       const payload: any = {
         name: d.name, slug, description: d.description || "", categoryId: d.categoryId || null, brand: d.brand || "VPB",
-        cordCount: Number(d.cordCount || 0), reelCount: d.reelCount || null, length: d.length || d.reelCount || null,
+        cordCount: Number(d.cordCount || 0), reelCount: d.reelCount || null, length: d.length ?? null,
         price: Number(d.price), comparePrice: d.comparePrice ? Number(d.comparePrice) : null,
         stockQuantity: Number(d.stockQuantity ?? 10), stockStatus: Number(d.stockQuantity ?? 10) <= 0 ? "out_of_stock" : (d.stockStatus || "in_stock"),
         sku: d.sku, featured: !!d.featured, bestseller: !!d.bestseller, active: d.active !== false,

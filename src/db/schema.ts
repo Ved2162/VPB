@@ -1,5 +1,6 @@
 import { pgTable, uuid, varchar, text, integer, boolean, timestamp, numeric, jsonb, index, primaryKey } from "drizzle-orm/pg-core";
 import type { InvoiceSnapshot } from '@/lib/invoice-types';
+import type { ProductSpecs } from '@/lib/product-specs';
 
 // Immutable image content lives in PostgreSQL, with no expiry or local-disk dependency.
 export const productImages = pgTable("product_images", {
@@ -42,7 +43,7 @@ export const products = pgTable("products", {
   rating: numeric("rating", { precision: 3, scale: 2 }).default("4.5"),
   reviewCount: integer("review_count").default(0).notNull(),
   highlights: jsonb("highlights").$type<string[]>().default([]).notNull(),
-  specs: jsonb("specs").$type<Record<string, string>>().default({}).notNull(),
+  specs: jsonb("specs").$type<ProductSpecs>().default({}).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

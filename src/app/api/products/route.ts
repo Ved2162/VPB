@@ -19,7 +19,7 @@ export async function GET(req: Request) {
 
     const conds: any[] = [publicProduct];
     if (q) {
-      conds.push(or(ilike(products.name, `%${q}%`), ilike(products.brand, `%${q}%`), ilike(products.sku, `%${q}%`), ilike(products.description, `%${q}%`))!);
+      conds.push(or(ilike(products.name, `%${q}%`), ilike(products.brand, `%${q}%`), ilike(products.reelCount, `%${q}%`), ilike(products.sku, `%${q}%`), ilike(products.description, `%${q}%`))!);
     }
     if (cat) {
       const c = await db.select().from(categories).where(eq(categories.slug, cat));

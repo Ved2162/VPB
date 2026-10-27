@@ -9,6 +9,7 @@ const state = vi.hoisted(() => ({ db: null as unknown }));
 vi.mock('@/db', () => ({ get db() { return state.db; } }));
 import * as admin from '../src/app/api/admin/route';
 import * as catalog from '../src/app/api/products/route';
+import * as productDetail from '../src/app/api/products/[slug]/route';
 import * as categories from '../src/app/api/categories/route';
 import * as orderApi from '../src/app/api/orders/[id]/route';
 import * as seed from '../src/app/api/seed/route';
@@ -36,6 +37,41 @@ beforeAll(async () => {
   customer = buyer; cookie = 'vpb_token=' + signToken(actor);
 });
 afterAll(async () => { await database?.pg.close(); });
+
+test('ordered specifications persist through partial updates, reordering and removal without changing product URLs or inventory', async () => {
+  const original = { name: 'VAYUSHASTRA Sankal 8', reelCount: '4 REEL', length: '4 Reels (4,000 meters)', sku: 'SPEC-PERSIST', price: 2800, stockQuantity: 7, specs: { Base: 'Original Sankal 8 Cotton Thread' } };
+  const created = await save('product', original);
+  const rows = [{ label: 'Base', value: 'Original Sankal 8 Cotton Thread' }, { label: 'Coating', value: '4-layer coating (Heavy Sharp & Finish)' }];
+  await save('product', { specs: [...rows, { label: '', value: '' }], name: 'VAYUSHASTRA Sankal 8 (4 REEL)' }, created.id);
+  state.db = drizzle(database.pg);
+  let detail = await (await productDetail.GET(request('/api/products/vayushastra-sankal-8'), { params: Promise.resolve({ slug: 'vayushastra-sankal-8' }) })).json();
+  expect(detail.product).toMatchObject({ price: 2800, stockQuantity: 7, slug: 'vayushastra-sankal-8', specs: rows });
+  for (const q of ['VAYUSHASTRA Sankal 8', 'Sankal 8', '4 REEL']) {
+    const result = await (await catalog.GET(request('/api/products?q=' + encodeURIComponent(q)))).json();
+    expect(result.products.find((p: { id: string }) => p.id === created.id).specs).toEqual(rows);
+  }
+  await save('product', { specs: [...rows].reverse() }, created.id);
+  expect((await read('products')).products.find((p: { id: string }) => p.id === created.id).specs).toEqual([...rows].reverse());
+  await save('product', { specs: [] }, created.id);
+  detail = await (await productDetail.GET(request('/api/products/vayushastra-sankal-8'), { params: Promise.resolve({ slug: 'vayushastra-sankal-8' }) })).json();
+  expect(detail.product.specs).toEqual([]);
+  for (const specs of [[{ label: '', value: 'x' }], [{ label: 'Base', value: 5 }], [{ label: 'Base', value: 'x' }, { label: 'base', value: 'y' }], [{ label: 'Base', value: 'x'.repeat(201) }], 'invalid']) {
+    expect((await admin.POST(request('/api/admin', { res: 'product', id: created.id, data: { specs } }))).status).toBe(400);
+  }
+  await database.db.delete(schema.products).where(eq(schema.products.id, created.id));
+});
+
+test('handcrafted product writes are denied for customers and delivery sub-admins', async () => {
+  const adminCookie = cookie;
+  try {
+    for (const role of ['customer', 'delivery']) {
+      const [actor] = await database.db.insert(schema.users).values({ name: role, phone: role === 'customer' ? '9000000083' : '9000000084', role, passwordHash: 'unused' }).returning();
+      cookie = 'vpb_token=' + signToken(actor);
+      expect((await admin.POST(request('/api/admin', { res: 'product', data: { name: 'Unauthorized', sku: 'UNAUTHORIZED', price: 100, specs: [{ label: 'Coating', value: 'Forged' }] } }))).status).toBe(403);
+      expect((await admin.POST(request('/api/admin', { res: 'product', id: missing, data: { specs: [] } }))).status).toBe(403);
+    }
+  } finally { cookie = adminCookie; }
+});
 
 test('every product field and category field is committed and returned by fresh database/API reads', async () => {
   const created = await save('category', { name: 'Original', image: '/old.png', description: 'Original category' });

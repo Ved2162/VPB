@@ -97,7 +97,7 @@ function ShopInner() {
       <div className="relative mt-5 max-w-xl">
         <div className="flex items-center overflow-hidden rounded-full border-2 border-[#e7d6b8] bg-white focus-within:border-[#7a1f1f]">
           <Search size={18} className="ml-4 text-stone-400" />
-          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && fetchProducts()} placeholder="Search Adnan, Black Panther, 9 cord, SKU…" className="w-full bg-transparent px-3 py-3 text-[15px] outline-none" />
+          <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && fetchProducts()} placeholder="Search Sankal 8, Rock Breaker, Panda 5, SKU…" className="w-full bg-transparent px-3 py-3 text-[15px] outline-none" />
           {q && <button onClick={() => { setQ(""); setSugg([]); }} className="mr-2 rounded-full p-1 hover:bg-stone-100"><X size={16} /></button>}
           <button onClick={fetchProducts} className="m-1 rounded-full bg-[#7a1f1f] px-6 py-2.5 text-sm font-bold text-white">Search</button>
         </div>

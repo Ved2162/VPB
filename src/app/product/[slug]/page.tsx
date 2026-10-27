@@ -1,4 +1,6 @@
 "use client";
+import { ProductSpecifications } from '@/components/product-specifications';
+import { productDisplayName, productSpecificationRows } from '@/lib/product-specs';
 import { SampleReviews } from '@/components/sample-reviews';
 import { useApiResource } from "@/lib/use-api-resource";
 import { SectionLoader, ProductSkeleton, ButtonLoader, LoadingError } from "@/components/loading";
@@ -82,7 +84,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
         </div>
         <div>
           <p className="text-[12px] font-bold uppercase tracking-[0.2em] text-[#a07c2c]">{p.brand} {p.cordCount ? `• ${p.cordCount} Cord` : ""}</p>
-          <h1 className="mt-1 font-serif text-[clamp(1.6rem,3.6vw,2.5rem)] font-bold leading-tight">{p.name}</h1>
+          <h1 className="mt-1 font-serif text-[clamp(1.6rem,3.6vw,2.5rem)] font-bold leading-tight">{productDisplayName(p)}</h1>
           <div className="mt-2 flex items-center gap-2">{p.reviewCount > 0 && <Stars v={p.rating} />}<span className="text-sm font-bold">{p.reviewCount > 0 ? Number(p.rating).toFixed(1) : "Not rated yet"}</span><span className="text-sm text-stone-400">• {p.reviewCount} reviews • SKU {p.sku}</span></div>
           <div className="mt-3 flex items-baseline gap-3">
             <span className="font-serif text-3xl font-black">{money(p.price)}</span>
@@ -118,10 +120,10 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
               <span className="flex items-center gap-1.5"><ShieldCheck size={14} /> Genuine VPB seal</span>
             </div>
           </div>
-          {p.specs && Object.keys(p.specs).length > 0 && (
+          {productSpecificationRows(p).length > 0 && (
             <div className="card mt-4 overflow-hidden">
               <p className="border-b border-[#ecdcb9] bg-[#fff6e3] px-4 py-2.5 font-serif text-[15px] font-bold">Specifications</p>
-              <dl>{Object.entries(p.specs).map(([k, v]: any) => (<div key={k} className="flex justify-between gap-4 border-b border-[#f3e8d0] px-4 py-2.5 text-sm last:border-0"><dt className="text-stone-500">{k}</dt><dd className="font-bold">{v}</dd></div>))}</dl>
+              <ProductSpecifications product={p} />
             </div>
           )}
         </div>

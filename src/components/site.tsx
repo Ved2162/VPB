@@ -1,4 +1,6 @@
 "use client";
+import { ProductSpecifications } from '@/components/product-specifications';
+import { productDisplayName } from '@/lib/product-specs';
 import { BrandedLink as Link } from "@/components/loading";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
@@ -9,7 +11,7 @@ import { money, INSTAGRAM_URL, PHONE_DISPLAY, WHATSAPP_URL, ADDRESS, ADDRESS_MAP
 
 export function Logo({ light = false }: { light?: boolean }) {
   return (
-    <Link href="/" aria-label="VPB — Verai Patang Bhandar" className="block shrink-0">
+    <Link href="/" aria-label="VPB trademark — Verai Patang Bhandar" className="relative block shrink-0">
       <img
         src={light ? "/images/vpb-logo-light.svg" : "/images/vpb-logo.svg"}
         alt="VPB — Verai Patang Bhandar"
@@ -17,6 +19,7 @@ export function Logo({ light = false }: { light?: boolean }) {
         height={44}
         className="h-8 w-auto max-w-[136px] select-none min-[380px]:h-10 min-[380px]:max-w-[160px] sm:h-12 sm:max-w-[180px]"
       />
+      <span aria-hidden="true" className={`absolute left-[36%] top-[8%] text-[9px] font-bold leading-none sm:text-[11px] ${light ? "text-[#f5e3c2]" : "text-[#7a1f1f]"}`}>™</span>
     </Link>
   );
 }
@@ -167,8 +170,8 @@ export function ProductCard({ p }: { p: any }) {
   const off = p.comparePrice && p.comparePrice > p.price ? Math.round((1 - p.price / p.comparePrice) * 100) : 0;
   const out = p.stockStatus === "out_of_stock" || p.stockQuantity <= 0;
   return (
-    <div className="reveal group relative overflow-hidden rounded-[18px] border border-[#ecdcb9] bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(43,20,13,.14)]">
-      <Link href={`/product/${p.slug}`} className="relative block aspect-[4/4.4] overflow-hidden bg-[#f6ead2]">
+    <div data-product-card={p.id} className="reveal group relative overflow-hidden rounded-[18px] border border-[#ecdcb9] bg-white transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_24px_50px_rgba(43,20,13,.14)]">
+      <Link href={`/product/${p.slug}`} tabIndex={-1} aria-hidden="true" className="relative block aspect-[4/4.4] overflow-hidden bg-[#f6ead2]">
         <SafeImg src={img} alt={p.name} sizes="(max-width:768px) 50vw, 25vw" className="object-cover transition-all duration-700 group-hover:scale-[1.06] group-hover:opacity-0" />
         <SafeImg src={img2} alt={p.name} sizes="(max-width:768px) 50vw, 25vw" className="object-cover opacity-0 transition-all duration-700 group-hover:scale-[1.06] group-hover:opacity-100" />
         {off > 0 && <span className="absolute left-3 top-3 rounded-full bg-[#7a1f1f] px-2.5 py-1 text-[11px] font-bold text-[#f7ead7]">-{off}%</span>}
@@ -178,10 +181,11 @@ export function ProductCard({ p }: { p: any }) {
       </Link>
       <div className="p-3.5 sm:p-4">
         <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#a07c2c]">{p.brand || "VPB"} {p.cordCount ? `• ${p.cordCount} Cord` : ""}</p>
-        <Link href={`/product/${p.slug}`} className="mt-0.5 line-clamp-1 font-serif text-[16px] font-bold text-[#2b140d] hover:text-[#7a1f1f]">{p.name}</Link>
+        <Link href={`/product/${p.slug}`} className="mt-0.5 block break-words font-serif text-[16px] font-bold text-[#2b140d] hover:text-[#7a1f1f] after:absolute after:inset-0 after:z-10 focus-visible:outline-none focus-visible:after:rounded-[18px] focus-visible:after:ring-2 focus-visible:after:ring-[#7a1f1f] focus-visible:after:ring-inset">{productDisplayName(p)}</Link>
+        <ProductSpecifications product={p} compact />
         <div className="mt-1 flex items-center gap-1.5">{p.reviewCount > 0 ? <Stars v={p.rating} /> : <span className="text-xs text-stone-500">No reviews yet</span>}<span className="text-xs text-stone-500">({p.reviewCount || 0})</span></div>
         <div className="mt-1.5 flex items-baseline gap-2"><span className="text-[17px] font-extrabold text-[#2b140d]">{money(p.price)}</span>{p.comparePrice > p.price && <span className="text-sm text-stone-400 line-through">{money(p.comparePrice)}</span>}</div>
-        <button disabled={out} onClick={() => { add({ id: p.id, slug: p.slug, name: p.name, price: p.price, comparePrice: p.comparePrice, image: img, stock: p.stockQuantity }, 1); toast(`${p.name} added to cart`); }} className="btn-primary mt-3 w-full !py-2.5 text-[13px] disabled:opacity-40">{out ? "Out of Stock" : "Add to Cart"}</button>
+        <button disabled={out} onClick={() => { add({ id: p.id, slug: p.slug, name: p.name, price: p.price, comparePrice: p.comparePrice, image: img, stock: p.stockQuantity }, 1); toast(`${p.name} added to cart`); }} className="btn-primary relative z-20 mt-3 w-full focus-visible:ring-2 focus-visible:ring-[#7a1f1f] focus-visible:ring-offset-2 !py-2.5 text-[13px] disabled:opacity-40">{out ? "Out of Stock" : "Add to Cart"}</button>
       </div>
     </div>
   );

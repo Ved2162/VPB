@@ -65,7 +65,7 @@ export default async function Home() {
         <div className="marquee text-[13px] font-bold uppercase tracking-[0.2em]">
           {[0, 1].map((k) => (
             <span key={k} className="flex shrink-0 items-center">
-              {["VAYUSHASTRA Sankal 8", "VAYUSHASTRA PANDA 5", "THE ROCK BREAKER, Sankal 8", "THE ROCK BREAKER, PANDA 5", "FREE Pan-India Shipping", "Tournament Grade"].map((t) => (
+              {["VAYUSHASTRA Sankal 8", "VAYUSHASTRA PANDA 5", "THE ROCK BREAKER", "FREE Pan-India Shipping", "Tournament Grade"].map((t) => (
                 <span key={t + k} className="mx-6 flex items-center gap-6">{t} <span className="text-[#c9a24b]">✦</span></span>
               ))}
             </span>
@@ -81,7 +81,7 @@ export default async function Home() {
             <h2 className="mt-2 font-serif text-[clamp(1.8rem,4vw,2.8rem)] font-bold leading-tight">Three generations.<br />One promise — <em className="text-[#7a1f1f]">sharp, honest manjha.</em></h2>
             <p className="mt-4 leading-relaxed text-stone-600">Every VPB reel starts as pure cotton thread in the gallis of Bareilly — boiled in rice-starch, coated with authentic Bareilly manjha paste, dried in the sun and tested metre by metre. No shortcuts. No mixing. Just the manjha our own family flies.</p>
             <div className="mt-6 grid grid-cols-3 gap-4">
-              {[["40+", "Years of craft"], ["2L+", "Reels flown"], ["100%", "Pure cotton"]].map(([n, l]) => (
+              {[["20+", "Years of experience"], ["2L+", "Reels flown"], ["100%", "Pure cotton"]].map(([n, l]) => (
                 <div key={l} className="rounded-2xl border border-[#ecdcb9] bg-white px-4 py-4 text-center"><p className="font-serif text-2xl font-black text-[#7a1f1f]">{n}</p><p className="text-xs font-semibold text-stone-500">{l}</p></div>
               ))}
             </div>
@@ -149,7 +149,7 @@ export default async function Home() {
 
         {/* PREMIUM COLLECTION */}
         <section>
-          <SectionHead kicker="Signature" title="Premium Collection" sub="Hand-finished, triple-coated, numbered reels for serious flyers." />
+          <SectionHead kicker="Signature" title="Premium Collection" sub="Explore the VPB premium manjha collection. See each reel for its base, coating and length." />
           <div className="mt-7 grid grid-cols-2 gap-4 lg:grid-cols-4">{showFeat.slice(0, 4).map((p: any) => (<ProductCard key={p.id} p={p} />))}</div>
         </section>
 

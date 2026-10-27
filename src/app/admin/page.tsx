@@ -1,4 +1,5 @@
 "use client";
+import { SpecificationEditor } from '@/components/specification-editor';
 import { isKiteIdentity } from '@/lib/catalog-identity';
 import { InvoiceActions } from '@/components/invoice-actions';
 import { ButtonLoader } from "@/components/loading";
@@ -318,6 +319,9 @@ export default function Admin() {
               <div><p className="label">Stock Status</p><select value={editP.stockStatus || "in_stock"} onChange={(e) => setEditP({ ...editP, stockStatus: e.target.value })} className="input"><option value="in_stock">In Stock</option><option value="out_of_stock">Out of Stock</option></select></div>
               <div className="sm:col-span-2"><ProductImagePicker value={typeof editP.images === "string" ? editP.images : (editP.images || []).join("\n")} onChange={(images) => setEditP((previous: any) => ({ ...previous, images }))} disabled={busy} onUploading={setUploadingImages} /></div>
               <div className="sm:col-span-2"><p className="label">Description</p><textarea value={editP.description || ""} onChange={(e) => setEditP({ ...editP, description: e.target.value })} className="input min-h-20" /></div>
+              <label className="label">Variant / subtitle<input aria-label="Variant / subtitle" maxLength={40} value={editP.reelCount || ""} onChange={e => setEditP({ ...editP, reelCount: e.target.value })} className="input" placeholder="4 REEL" /></label>
+              <label className="label">Length and reel details<input aria-label="Length and reel details" maxLength={80} value={editP.length || ""} onChange={e => setEditP({ ...editP, length: e.target.value })} className="input" placeholder="4 Reels (4,000 meters)" /></label>
+              <div className="sm:col-span-2"><SpecificationEditor value={editP.specs || {}} onChange={specs => setEditP({ ...editP, specs })} disabled={busy} /></div>
               <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={!!editP.featured} onChange={(e) => setEditP({ ...editP, featured: e.target.checked })} /> Featured</label>
               <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={!!editP.bestseller} onChange={(e) => setEditP({ ...editP, bestseller: e.target.checked })} /> Bestseller</label>
               <label className="flex items-center gap-2 text-sm font-bold"><input type="checkbox" checked={editP.active !== false} onChange={(e) => setEditP({ ...editP, active: e.target.checked })} /> Active</label>
