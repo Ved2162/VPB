@@ -9,8 +9,8 @@ export const PHONE = "9081111697";
 export const PHONE_DISPLAY = "+91 90811 11697";
 export const WHATSAPP_URL = `https://wa.me/91${PHONE}`;
 
-export const ADDRESS = "Verai Patang Bhandar, Cluster Nikol 4 Swagat Park 1(1-36), Nicol Gam, Nikol, Ahmedabad, Gujarat 380049";
-export const ADDRESS_MAPS_URL = "https://maps.google.com/?q=Verai+Patang+Bhandar,+Cluster+Nikol+4+Swagat+Park+1,+Nicol+Gam,+Nikol,+Ahmedabad,+Gujarat+380049";
+export const ADDRESS = "Verai Patang Bhandar, Swagat Park Society, Khodiyar Mandir, 1, Nicol Gam, Nikol, Gujarat 382350";
+export const ADDRESS_MAPS_URL = `https://maps.google.com/?q=${encodeURIComponent(ADDRESS)}`;
 
 export const money = (n: number) => "₹" + Number(n || 0).toLocaleString("en-IN");
 
