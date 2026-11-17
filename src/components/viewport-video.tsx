@@ -26,5 +26,5 @@ export function ViewportVideo({ src, poster, className, label, width, height }: 
       window.removeEventListener('load', loaded); document.removeEventListener('visibilitychange', update);
     };
   }, [src]);
-  return <video ref={ref} autoPlay muted loop playsInline preload="none" poster={poster} className={className} aria-label={label} aria-hidden={label ? undefined : true} width={width} height={height} />;
+  return <video ref={ref} autoPlay muted loop playsInline preload="none" poster={poster} className={className} aria-label={label} aria-hidden={label ? undefined : true} width={width} height={height} suppressHydrationWarning />;
 }

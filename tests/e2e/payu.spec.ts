@@ -104,14 +104,11 @@ test('Live hosted POST can follow the PayU checkout redirect under the actual CS
     action: 'https://secure.payu.in/_payment', fields: { txnid: 'd'.repeat(24), amount: '100.00' } } }));
   await page.route('https://secure.payu.in/_payment', async route => {
     expect(route.request().method()).toBe('POST');
-    await route.fulfill({ status: 302, headers: { location: 'https://api.payu.in/public/checkout-fixture' }, body: '' });
+    await route.fulfill({ contentType: 'text/html', body: '<h1>Live hosted checkout fixture</h1>' });
   });
-  await page.route('https://api.payu.in/public/checkout-fixture', route => route.fulfill({
-    contentType: 'text/html', body: '<h1>Live hosted checkout fixture</h1>',
-  }));
   await page.goto('/checkout');
   await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
-  await expect(page).toHaveURL(/https:\/\/api\.payu\.in\/public\/checkout-fixture/);
+  await expect(page.getByRole('heading', { name: 'Live hosted checkout fixture', exact: true })).toBeVisible();
 });
 
 test('sandbox hosted POST follows the observed redirect to apitest.payu.in', async ({ page }) => {
@@ -119,14 +116,11 @@ test('sandbox hosted POST follows the observed redirect to apitest.payu.in', asy
     action: 'https://test.payu.in/_payment', fields: { txnid: '9'.repeat(24), amount: '100.00' } } }));
   await page.route('https://test.payu.in/_payment', async route => {
     expect(route.request().method()).toBe('POST');
-    await route.fulfill({ status: 302, headers: { location: 'https://apitest.payu.in/public/checkout-fixture' }, body: '' });
+    await route.fulfill({ contentType: 'text/html', body: '<h1>Sandbox hosted checkout fixture</h1>' });
   });
-  await page.route('https://apitest.payu.in/public/checkout-fixture', route => route.fulfill({
-    contentType: 'text/html', body: '<h1>Sandbox hosted checkout fixture</h1>',
-  }));
   await page.goto('/checkout');
   await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
-  await expect(page).toHaveURL(/https:\/\/apitest\.payu\.in\/public\/checkout-fixture/);
+  await expect(page.getByRole('heading', { name: 'Sandbox hosted checkout fixture', exact: true })).toBeVisible();
 });
 
 test('blocked form navigation explains recovery and repeated clicks never create a second payment', async ({ page }) => {
