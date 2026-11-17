@@ -45,7 +45,7 @@ async function fixture(price = 100) {
 }
 type Fixture = Awaited<ReturnType<typeof fixture>>;
 function provider(f: Fixture, patch: Record<string, string> = {}) {
-  const detail = { txnid: f.checkout.fields.txnid, mihpayid: String(100000 + sequence), amt: '100.00', productinfo: 'VPB order', udf1: f.checkout.orderId,
+  const detail = { txnid: f.checkout.fields.txnid, mihpayid: String(100000 + sequence), amt: f.checkout.fields.amount, productinfo: 'VPB order', udf1: f.checkout.orderId,
     status: 'success', unmappedstatus: 'captured', ...patch };
   const fetcher = vi.fn(async () => Response.json({ status: 1, transaction_details: { [f.checkout.fields.txnid]: detail } }));
   vi.stubGlobal('fetch', fetcher); return { detail, fetcher };
@@ -100,7 +100,7 @@ test('fresh concurrent Live checkout ignores a matching sandbox attempt and tran
   const [live, duplicate] = await Promise.all(responses.map(response => response.json()));
   expect(live.orderId).not.toBe(f.checkout.orderId);
   expect(live.action).toBe('https://secure.payu.in/_payment');
-  expect(live.fields.amount).toBe('100.00');
+  expect(live.fields.amount).toBe('95.00');
   expect(live.fields.txnid).not.toBe(f.checkout.fields.txnid);
   expect(duplicate.orderId).toBe(live.orderId);
   expect(duplicate.fields.txnid).toBe(live.fields.txnid);
@@ -154,7 +154,7 @@ test('backend pricing and repeated concurrent checkout create one order and one 
   const f = await fixture();
   const responses = await Promise.all([create.POST(request('/api/payment/create', f.body, f.user)), create.POST(request('/api/payment/create', f.body, f.user))]);
   for (const response of responses) expect((await response.json()).fields.txnid).toBe(f.checkout.fields.txnid);
-  expect(f.checkout.fields.amount).toBe('100.00'); expect(f.checkout.action).toBe('https://test.payu.in/_payment');
+  expect(f.checkout.fields.amount).toBe('95.00'); expect(f.checkout.action).toBe('https://test.payu.in/_payment');
   expect(JSON.stringify(f.checkout)).not.toContain('isolated-payu-merchant-salt');
   expect((await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId)))).toHaveLength(1);
   expect((await saved(f)).paymentStatus).toBe('pending');
@@ -351,10 +351,10 @@ test.each(['bounced', 'dropped'])('concurrent retries after verified %s create o
 
 test('1800 order cannot accept a 1550 PayU transaction or change its payable amount', async () => {
   const f = await fixture(1800);
-  expect(f.checkout.fields.amount).toBe('1800.00');
+  expect(f.checkout.fields.amount).toBe('1710.00');
   provider(f, { amt: '1550.00' });
   await expect(reconcilePayu(f.checkout.fields.txnid)).rejects.toThrow('does not match');
-  expect(await saved(f)).toMatchObject({ total: 1800, paymentStatus: 'pending' });
+  expect(await saved(f)).toMatchObject({ total: 1710, paymentStatus: 'pending' });
 });
 
 test('invalid checkout configuration returns a safe error without another attempt', async () => {

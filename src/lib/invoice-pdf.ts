@@ -67,8 +67,8 @@ export async function renderInvoicePdf(invoice: typeof orderInvoices.$inferSelec
   y += 8;
   paragraph('Line totals are quantity × unit price, before the order-level discount. Item discounts and tax allocations are not separately recorded.', false, 8);
   space(150);
-  for (const [label, value] of [['Subtotal', s.subtotal], ['Shipping', s.shipping], ['Order discount', -s.discount], ['TOTAL PAID', s.total]] as const) {
-    const total = label === 'TOTAL PAID';
+  for (const [label, value] of [['Subtotal', s.subtotal], ['Shipping', s.shipping], ['Discount (5%)', -s.discount], ['FINAL PAYABLE', s.total]] as const) {
+    const total = label === 'FINAL PAYABLE';
     if (total) doc.rect(310, y - 5, 245, 31).fill('#fff6e3');
     text(label, 310, y, 124, total ? 11 : 9, total); text(currency(value), 435, y, 117, total ? 11 : 9, total, 'right'); y += 30;
   }

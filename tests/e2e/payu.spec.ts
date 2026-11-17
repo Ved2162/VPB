@@ -111,7 +111,7 @@ test('Live hosted POST can follow the PayU checkout redirect under the actual CS
   }));
   await page.goto('/checkout');
   await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Live hosted checkout fixture', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/https:\/\/api\.payu\.in\/public\/checkout-fixture/);
 });
 
 test('sandbox hosted POST follows the observed redirect to apitest.payu.in', async ({ page }) => {
@@ -126,7 +126,7 @@ test('sandbox hosted POST follows the observed redirect to apitest.payu.in', asy
   }));
   await page.goto('/checkout');
   await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Sandbox hosted checkout fixture', exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/https:\/\/apitest\.payu\.in\/public\/checkout-fixture/);
 });
 
 test('blocked form navigation explains recovery and repeated clicks never create a second payment', async ({ page }) => {

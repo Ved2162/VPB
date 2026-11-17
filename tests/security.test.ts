@@ -104,13 +104,13 @@ test('identical checkout requests reuse one order and a changed address gets a s
   expect((await checkout.POST(request('/api/payment/create', { ...body, idempotencyKey: crypto.randomUUID(), address: { ...address, addressLine: 'Different street' } }, customer))).status).toBe(200);
   expect((await database.db.select().from(schema.orders).where(eq(schema.orders.userId, customer.id))).length).toBe(2);
 });
-test.each([100, 5999, 6000, 6200])('checkout charges no shipping at a subtotal of %i and keeps the existing discount', async (price) => {
+test.each([100, 5999, 6000, 6200])('checkout discounts the complete subtotal at 5%% for %i', async (price) => {
   const [buyer] = await database.db.insert(schema.users).values({ name: 'Shipping fixture', phone: '950000' + String(price).padStart(4, '0'), passwordHash: 'test-only', role: 'customer' }).returning();
   const [product] = await database.db.insert(schema.products).values({ name: 'Free shipping fixture', slug: 'free-shipping-' + price, sku: 'FREE-SHIP-' + price, price, stockQuantity: 10 }).returning();
   const address = { name: 'Customer', phone: customer.phone, addressLine: 'Test street', city: 'Bareilly', state: 'UP', pincode: '243001' };
   const response = await checkout.POST(request('/api/payment/create', { idempotencyKey: crypto.randomUUID(), email: 'fixture@example.com', items: [{ id: product.id, qty: 1 }], address, shippingCharge: 99, total: 1 }, buyer));
   expect(response.status).toBe(200);
-  const discount = price >= 6000 ? 200 : 0;
+  const discount = Math.round(price * 5) / 100;
   const result = await response.json();
   expect(result.fields.amount).toBe((price - discount).toFixed(2));
   const [order] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, result.orderId));

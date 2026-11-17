@@ -22,9 +22,9 @@ export async function ensureInvoice(orderId: string) {
       throw new DeliveryError('Invoice is available after verified payment and order confirmation', 409);
     const items = await tx.select().from(orderItems).where(eq(orderItems.orderId, orderId)).orderBy(asc(orderItems.id));
     const values = [order.subtotal, order.shippingCharge, order.discount, order.total, ...items.flatMap(i => [i.price, i.quantity])];
-    if (!items.length || values.some(v => !Number.isSafeInteger(v) || v < 0) || items.some(i => i.quantity < 1) ||
+    if (!items.length || values.some(v => !Number.isFinite(v) || Math.round(v * 100) !== v * 100 || v < 0) || items.some(i => i.quantity < 1) ||
       items.reduce((sum, i) => sum + i.price * i.quantity, 0) !== order.subtotal ||
-      order.subtotal + order.shippingCharge - order.discount !== order.total || order.discount > order.subtotal)
+      Math.round((order.subtotal + order.shippingCharge - order.discount) * 100) !== Math.round(order.total * 100) || order.discount > order.subtotal)
       throw new DeliveryError('Invoice totals need review. Please contact support.', 409);
     const issuedAt = new Date();
     const fy = financialYear(issuedAt);

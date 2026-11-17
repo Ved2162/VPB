@@ -130,7 +130,7 @@ test('repeat checkout renews its own reservation; failed payment releases it for
   const first = await (await checkout.POST(request('/api/payment/create', a, body(a)))).json();
   expect((await checkout.POST(request('/api/payment/create', a, body(a)))).status).toBe(200); expect((await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, first.orderId))).length).toBe(1);
   expect((await checkout.POST(request('/api/payment/create', b, body(b)))).status).toBe(409);
-  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ status: 1, transaction_details: { [first.fields.txnid]: { txnid: first.fields.txnid, amt: '100.00', udf1: first.orderId, productinfo: 'VPB order', status: 'failure', unmappedstatus: 'failed' } } })));
+  vi.stubGlobal('fetch', vi.fn(async () => Response.json({ status: 1, transaction_details: { [first.fields.txnid]: { txnid: first.fields.txnid, amt: first.fields.amount, udf1: first.orderId, productinfo: 'VPB order', status: 'failure', unmappedstatus: 'failed' } } })));
   await reconcilePayu(first.fields.txnid);
   vi.unstubAllGlobals();
   expect((await checkout.POST(request('/api/payment/create', b, body(b)))).status).toBe(200);
@@ -141,7 +141,7 @@ test('expired reservations release stock and a late capture cannot take another 
   const first = await (await checkout.POST(request('/api/payment/create', a, body(a)))).json();
   await database.db.update(schema.inventoryReservations).set({ expiresAt: new Date(0) }).where(eq(schema.inventoryReservations.productId, p.id));
   expect((await checkout.POST(request('/api/payment/create', b, body(b)))).status).toBe(200);
-  const settled = await finalizePayment({ provider: 'payu', orderId: first.fields.txnid, paymentId: '123456789', amount: 10000, currency: 'INR' });
+  const settled = await finalizePayment({ provider: 'payu', orderId: first.fields.txnid, paymentId: '123456789', amount: Math.round(Number(first.fields.amount) * 100), currency: 'INR' });
   expect(settled.order).toMatchObject({ paymentStatus: 'paid', orderStatus: 'placed' });
   expect(settled.order.paymentData?.stockReviewRequired).toBe(true);
   expect((await database.db.select().from(schema.products).where(eq(schema.products.id, p.id)))[0].stockQuantity).toBe(1);

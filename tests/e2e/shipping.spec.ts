@@ -6,7 +6,7 @@ for (const qty of [1, 60]) {
     await page.addInitScript((quantity) => {
       localStorage.setItem('vpb_cart', JSON.stringify([{ id: '20000000-0000-4000-8000-000000000001', slug: 'loader-test-manjha', name: 'Loader test manjha', price: 100, image: '/images/manjha/m01.png', qty: quantity, stock: 100 }]));
     }, qty);
-    const total = qty === 1 ? '₹100' : '₹5,800';
+    const total = qty === 1 ? '₹95' : '₹5,700';
     const main = page.getByRole('main');
     await page.goto('/cart');
     await expect(main.getByText('Shipping', { exact: true }).locator('..')).toContainText('FREE');

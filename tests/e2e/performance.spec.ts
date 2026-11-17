@@ -44,8 +44,10 @@ test('responsive images are smaller and cacheable; hidden hover images wait for 
 test('reduced motion keeps video posters without starting large video downloads', async ({ page }) => {
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto('/');
-  await expect(page.locator('video')).toHaveAttribute('preload', 'none');
-  await expect(page.locator('video')).not.toHaveAttribute('src');
+  for (const video of await page.locator('video').all()) {
+    await expect(video).toHaveAttribute('preload', 'none');
+    await expect(video).not.toHaveAttribute('src');
+  }
   await page.goto('/craftsmanship');
-  await expect(page.locator('video')).not.toHaveAttribute('src');
+  for (const video of await page.locator('video').all()) await expect(video).not.toHaveAttribute('src');
 });

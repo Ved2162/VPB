@@ -12,6 +12,7 @@ import { SafeImg } from "@/components/site";
 
 import { InvoiceActions } from '@/components/invoice-actions';
 import { submitPayuForm } from '@/lib/payu-navigation';
+import { orderDiscount, payableTotal } from '@/lib/pricing';
 
 const STEPS = ["Account", "Address", "Summary", "Payment", "Done"];
 
@@ -53,9 +54,9 @@ export default function CheckoutPage() {
   const [err, setErr] = useState("");
 
   const subtotal = order?.subtotal ?? cartSubtotal;
-  const discount = order?.discount ?? (subtotal >= 6000 ? 200 : 0);
+  const discount = order?.discount ?? orderDiscount(subtotal);
   const ship = order?.shippingCharge ?? 0;
-  const total = order?.total ?? subtotal - discount + ship;
+  const total = order?.total ?? payableTotal(subtotal, ship);
 
   // OTP cooldown timer
   const otpTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -341,7 +342,7 @@ export default function CheckoutPage() {
             <h3 className="font-serif text-lg font-bold">Summary</h3>
             <div className="mt-3 space-y-1.5 text-sm">
               <div className="flex justify-between"><span className="text-stone-500">Subtotal</span><b>{money(subtotal)}</b></div>
-              <div className="flex justify-between"><span className="text-stone-500">Discount</span><b className="text-green-700">-{money(discount)}</b></div>
+              <div className="flex justify-between"><span className="text-stone-500">Discount (5%)</span><b className="text-green-700">-{money(discount)}</b></div>
               <div className="flex justify-between"><span className="text-stone-500">Shipping</span><b>{ship === 0 ? "FREE" : money(ship)}</b></div>
               <div className="flex justify-between border-t border-dashed border-[#e7d6b8] pt-2 font-serif text-lg font-black"><span>Total</span><span className="text-[#7a1f1f]">{money(total)}</span></div>
             </div>

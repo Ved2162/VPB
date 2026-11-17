@@ -9,6 +9,7 @@ import { ShoppingBag, Search, Menu, X, User, Star, Plus, Minus, Trash2, AtSign, 
 import { localStore } from "@/lib/browser-state";
 import { useCart, useAuth, useToast } from "@/lib/store";
 import { money, INSTAGRAM_URL, PHONE_DISPLAY, WHATSAPP_URL, ADDRESS, ADDRESS_MAPS_URL } from "@/lib/data";
+import { orderDiscount, payableTotal } from "@/lib/pricing";
 
 export function Logo({ light = false }: { light?: boolean }) {
   return (
@@ -108,7 +109,7 @@ export function Navbar() {
 
 export function CartDrawer() {
   const { lines, open, setOpen, setQty, remove, subtotal } = useCart();
-  const discount = subtotal >= 6000 ? 200 : 0;
+  const discount = orderDiscount(subtotal);
   const ship = 0;
   return (
     <>
@@ -149,8 +150,8 @@ export function CartDrawer() {
           <div className="border-t border-[#efe0c3] bg-white px-5 py-4">
             <div className="flex justify-between text-sm"><span className="text-stone-500">Subtotal</span><span className="font-bold">{money(subtotal)}</span></div>
             <div className="flex justify-between text-sm"><span className="text-stone-500">Shipping</span><span className="font-bold">{ship === 0 ? "FREE" : money(ship)}</span></div>
-            {discount > 0 && <div className="flex justify-between text-sm"><span className="text-stone-500">Discount</span><span className="font-bold">−{money(discount)}</span></div>}
-            <div className="mt-1 flex justify-between border-t border-dashed border-[#e7d6b8] pt-2 font-serif text-lg font-bold"><span>Total</span><span className="text-[#7a1f1f]">{money(subtotal - discount + ship)}</span></div>
+            <div className="flex justify-between text-sm"><span className="text-stone-500">Discount (5%)</span><span className="font-bold">−{money(discount)}</span></div>
+            <div className="mt-1 flex justify-between border-t border-dashed border-[#e7d6b8] pt-2 font-serif text-lg font-bold"><span>Total</span><span className="text-[#7a1f1f]">{money(payableTotal(subtotal, ship))}</span></div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <Link href="/cart" onClick={() => setOpen(false)} className="btn-ghost text-center">View Cart</Link>
               <Link href="/checkout" onClick={() => setOpen(false)} className="btn-primary text-center">Checkout</Link>

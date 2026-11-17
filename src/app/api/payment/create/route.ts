@@ -11,6 +11,7 @@ import { preparePayuCheckout, isRetiredSandboxAttempt, retiredSandboxResult } fr
 import { sameOrigin, DeliveryError, textField } from '@/lib/shipment-rules';
 import { activeUser, rateLimit, deliveryFailure } from '@/lib/delivery-server';
 import { payuLog } from '@/lib/payu-log';
+import { orderDiscount, payableTotal } from '@/lib/pricing';
 
 // Server-side cart validation + PayU checkout preparation.
 // Trusts ONLY the cart lines and re-prices from the database — never the frontend total.
@@ -68,9 +69,9 @@ export async function POST(req: Request) {
       cartSnapshot.push({ id: p.id, qty: it.qty, price: p.price, name: p.name, image: p.images?.[0] || "" });
     }
 
-    const discount = subtotal >= 6000 ? 200 : 0;
+    const discount = orderDiscount(subtotal);
     const shipping = 0;
-    const total = subtotal - discount + shipping;
+    const total = payableTotal(subtotal, shipping);
 
     // Check for an existing pending order for this cart (de-duplicate refreshes/retries)
     const existingRows = await tx.select({ order: orders, environment: payuAttempts.environment }).from(orders)

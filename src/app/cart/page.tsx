@@ -8,13 +8,14 @@ import { useCart } from "@/lib/store";
 import { money } from "@/lib/data";
 import { ProductCard, SafeImg } from "@/components/site";
 import { useEffect, useState } from "react";
+import { orderDiscount, payableTotal } from "@/lib/pricing";
 
 export default function CartPage() {
   const { lines, setQty, remove, subtotal, clear, ready } = useCart();
   const recommendations = useApiResource<{ products: any[] }>('/api/products?tag=bestseller&limit=4');
   const recs = recommendations.data?.products || [];
   if (!ready) return <SectionLoader label="Preparing your cart…" />;
-  const discount = subtotal >= 6000 ? 200 : 0;
+  const discount = orderDiscount(subtotal);
   const ship = 0;
 
   if (lines.length === 0)
@@ -57,7 +58,7 @@ export default function CartPage() {
           <h3 className="font-serif text-xl font-bold">Order Summary</h3>
           <div className="mt-4 space-y-2 text-sm">
             <div className="flex justify-between"><span className="text-stone-500">Subtotal</span><b>{money(subtotal)}</b></div>
-            <div className="flex justify-between"><span className="text-stone-500">Discount {discount ? "(₹200 OFF)" : ""}</span><b className="text-green-700">-{money(discount)}</b></div>
+            <div className="flex justify-between"><span className="text-stone-500">Discount (5%)</span><b className="text-green-700">-{money(discount)}</b></div>
             <div className="flex justify-between"><span className="text-stone-500">Shipping</span><b>{ship === 0 ? "FREE" : money(ship)}</b></div>
             <p className="rounded-xl bg-[#fff4de] px-3 py-2 text-xs font-semibold text-[#7a5b1e]">FREE shipping on every order — no minimum spend.</p>
             {subtotal < 6000 && <p className="text-xs font-semibold text-[#7a5b1e]">Add {money(6000 - subtotal)} more for ₹200 OFF</p>}
