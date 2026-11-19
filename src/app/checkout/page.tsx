@@ -52,11 +52,24 @@ export default function CheckoutPage() {
   const [otpMasked, setOtpMasked] = useState("");
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [err, setErr] = useState("");
+  const [retryAfter, setRetryAfter] = useState(0);
 
   const subtotal = order?.subtotal ?? cartSubtotal;
   const discount = order?.discount ?? orderDiscount(subtotal);
   const ship = order?.shippingCharge ?? 0;
   const total = order?.total ?? payableTotal(subtotal, ship);
+
+  // Countdown timer for rate-limit cooldown
+  useEffect(() => {
+    if (retryAfter <= 0) return;
+    const t = window.setTimeout(() => setRetryAfter(n => Math.max(0, n - 1)), 1000);
+    return () => window.clearTimeout(t);
+  }, [retryAfter]);
+
+  const showErr = (msg: string, seconds?: number) => {
+    setErr(msg);
+    if (seconds && seconds > 0) setRetryAfter(seconds);
+  };
 
   // OTP cooldown timer
   const otpTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -73,7 +86,7 @@ export default function CheckoutPage() {
     if (!otpPhone.trim()) { setErr("Enter your mobile number"); return; }
     const r = await apiFetch("/api/otp/send", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ phone: otpPhone }) });
     const j = await r.json();
-    if (!j.ok) { if (j.cooldown) setOtpCooldown(j.cooldown); setErr(j.error); return; }
+    if (!j.ok) { if (j.cooldown) setOtpCooldown(j.cooldown); showErr(j.error || 'Unable to send OTP. Please try again.'); return; }
     setOtpMasked(j.masked); setOtpStep("otp"); setOtpCooldown(60); toast("OTP sent!");
   };
 
@@ -83,7 +96,7 @@ export default function CheckoutPage() {
     if (otpCode.length !== 6) { setErr("Enter the 6-digit OTP"); return; }
     const r = await apiFetch("/api/otp/verify", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ phone: otpPhone, otp: otpCode, name: otpName.trim() }) });
     const j = await r.json();
-    if (!j.ok) { if (j.needName && !otpName.trim()) { setErr("Enter your name"); setOtpStep("phone"); return; } setErr(j.error); return; }
+    if (!j.ok) { if (j.needName && !otpName.trim()) { showErr("Enter your name"); setOtpStep("phone"); return; } showErr(j.error || 'Verification failed. Please try again.'); return; }
     setVerifiedOtp(true);
     setUser({ id: j.user.id, name: j.user.name, phone: j.user.phone, role: j.user.role });
     toast("Welcome" + (j.isNew ? " to VPB!" : " back, " + j.user.name.split(" ")[0] + "!"));
@@ -152,7 +165,7 @@ export default function CheckoutPage() {
       sessionStorage.removeItem('vpb-checkout-request');
       window.history.replaceState(null, '', '/checkout');
       toast(result.order.fulfillmentPending ? 'Payment received - your order is awaiting review.' : 'Payment successful - order confirmed!');
-    } catch (error) { setVerificationPaused(true); setErr(error instanceof Error ? error.message : 'Unable to confirm payment'); }
+    } catch (error) { setVerificationPaused(true); showErr(error instanceof Error ? error.message : 'Unable to confirm payment'); }
     finally { verificationAction.current = false; setPlacing(false); }
   };
 
@@ -200,7 +213,15 @@ export default function CheckoutPage() {
         body: JSON.stringify(existingId ? { orderId: existingId } : { items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel, email: deliveryEmail.trim(), idempotencyKey: checkoutRequest.id }) });
       const result = await response.json();
       if (recoverRetiredTestCheckout(result)) return;
-      if (!response.ok || !result.ok) throw new Error(result.error || 'Unable to prepare payment');
+      if (!response.ok || !result.ok) {
+        if (response.status === 429) {
+          const secs = result.retryAfter || 120;
+          showErr(`Too many payment attempts. Please wait ${secs} seconds before trying again.`, secs);
+        } else {
+          throw new Error(result.error || 'Unable to prepare payment');
+        }
+        return;
+      }
       if (result.alreadyPaid || result.needsVerification) { await verifyReceipt(result.orderId); return; }
       if (!['https://test.payu.in/_payment', 'https://secure.payu.in/_payment'].includes(result.action)) throw new Error('Invalid checkout destination');
       sessionStorage.setItem('vpb-payu-order', result.orderId);
@@ -208,7 +229,7 @@ export default function CheckoutPage() {
       if (result.orderSummary) setOrder(result.orderSummary);
       pollCount.current = 0; setVerificationPaused(false);
       await submitPayuForm(result.action, result.fields);
-    } catch (error) { setVerificationPaused(true); setErr(error instanceof Error ? error.message : 'Payment gateway error. Please retry.'); }
+    } catch (error) { setVerificationPaused(true); showErr(error instanceof Error ? error.message : 'Payment gateway error. Please retry.'); }
     finally { paymentAction.current = false; setPlacing(false); }
   };
 
@@ -325,12 +346,15 @@ export default function CheckoutPage() {
                     {err && (
                       <div className="mt-2 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">
                         <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                        <span className="flex-1">{err}</span>
-                        <button onClick={() => placeOrder()} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold text-red-800 ring-1 ring-red-200"><RefreshCw size={12} /> Retry</button>
+                        <span className="flex-1">
+                          {err}
+                          {retryAfter > 0 && <span className="ml-1 font-bold">({retryAfter}s)</span>}
+                        </span>
+                        {retryAfter <= 0 && <button onClick={() => { setErr(''); placeOrder(); }} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold text-red-800 ring-1 ring-red-200"><RefreshCw size={12} /> Retry</button>}
                       </div>
                     )}
-                    <button onClick={() => placeOrder()} disabled={placing} className="btn-primary mt-4 w-full !py-4 !text-[15px] disabled:opacity-60">
-                      {placing ? <ButtonLoader label="Opening PayU..." /> : pendingReceipt ? (paymentFailed ? "Retry payment" : "Check payment status") : <><Lock size={15} /> Continue to PayU</>}
+                    <button onClick={() => placeOrder()} disabled={placing || retryAfter > 0} className="btn-primary mt-4 w-full !py-4 !text-[15px] disabled:opacity-60">
+                      {placing ? <ButtonLoader label="Opening PayU..." /> : retryAfter > 0 ? `Please wait ${retryAfter}s…` : pendingReceipt ? (paymentFailed ? "Retry payment" : "Check payment status") : <><Lock size={15} /> Continue to PayU</>}
                     </button>
                   </div>
                 )}

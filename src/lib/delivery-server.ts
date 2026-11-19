@@ -35,7 +35,10 @@ export async function rateLimit(key: string, limit = 90, windowSeconds = 60) {
       resetAt: sql`case when ${deliveryRateLimits.resetAt} <= now() then now() + ${windowSeconds} * interval '1 second' else ${deliveryRateLimits.resetAt} end`,
     },
   }).returning();
-  if (row.count > limit) throw new DeliveryError('Too many requests. Please try again shortly.', 429);
+  if (row.count > limit) {
+    const retryAfter = Math.max(1, Math.ceil((new Date(row.resetAt).getTime() - Date.now()) / 1000));
+    throw Object.assign(new DeliveryError('Too many requests. Please try again shortly.', 429), { retryAfter });
+  }
 }
 // Vercel overwrites this header. On other hosts, do not trust client-supplied
 // forwarding headers: use a conservative shared bucket until a trusted proxy is configured.
@@ -54,7 +57,10 @@ export async function jsonBody(req: Request): Promise<Record<string, unknown>> {
   return readJson(req);
 }
 export function deliveryFailure(error: unknown) {
-  if (error instanceof DeliveryError) return Response.json({ ok: false, error: error.message }, { status: error.status });
+  if (error instanceof DeliveryError) {
+    const retryAfter = (error as any).retryAfter as number | undefined;
+    return Response.json({ ok: false, error: error.message, ...(retryAfter ? { retryAfter } : {}) }, { status: error.status });
+  }
   const code = (error as { code?: string; cause?: { code?: string } })?.cause?.code || (error as {code?: string})?.code;
   if (code === '23505') return Response.json({ ok: false, error: 'That phone number or provider name is already in use' }, { status: 409 });
   console.error('[delivery]', code || 'Unexpected failure');

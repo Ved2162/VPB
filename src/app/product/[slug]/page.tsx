@@ -34,7 +34,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
   const error = product.error;
   const load = product.refresh;
   if (loading && !data) return <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6"><SectionLoader label="Loading product details…" /><ProductSkeleton detail /></div>;
-  if (!data?.product) return <div className="mx-auto max-w-2xl px-4 py-20 text-center"><p className="font-serif text-2xl font-bold">Product not found</p><p className="text-stone-500">{error}</p><div className="mt-4 flex justify-center gap-2"><button onClick={load} className="btn-ghost">Retry</button><Link href="/shop" className="btn-primary">Back to Shop</Link></div></div>;
+  if (!data?.product) return <div className="mx-auto max-w-2xl px-4 py-20 text-center"><p className="font-serif text-2xl font-bold">Product not found</p><p className="text-stone-500">This product may no longer be available.</p><div className="mt-4 flex justify-center gap-2"><button onClick={load} className="btn-ghost">Retry</button><Link href="/shop" className="btn-primary">Back to Shop</Link></div></div>;
 
   const p = data.product;
   const images = p.images?.length ? p.images : [""];
@@ -48,7 +48,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
     setPinMsg("");
     const r = await apiFetch("/api/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ res: "pincode", pincode: pin }) });
     const j = await r.json();
-    setPinMsg(j.ok ? `✓ ${j.eta} to ${pin} • Shipping ${j.charge === 0 ? "FREE" : "₹" + j.charge}` : "✕ " + j.error);
+    setPinMsg(j.ok ? `✓ ${j.eta} to ${pin} • Shipping ${j.charge === 0 ? "FREE" : "₹" + j.charge}` : "✕ " + (j.error || 'Unable to check delivery for this pincode'));
     } finally { setPinBusy(false); }
   };
 
@@ -60,7 +60,7 @@ export default function ProductPage({ params }: { params: Promise<{ slug: string
     const r = await apiFetch("/api/extra", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ res: "review", productId: p.id, ...revForm }) });
     const j = await r.json();
     if (j.ok) { toast("Review submitted for moderation. Thank you!"); setRevForm({ rating: 5, title: "", review: "", language: "en" }); load(); }
-    else toast(j.error || "Failed");
+    else toast(j.error || 'Unable to submit review. Please try again.');
     } finally { setReviewBusy(false); }
   };
 

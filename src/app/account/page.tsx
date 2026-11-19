@@ -49,7 +49,7 @@ export default function AccountPage() {
     });
     const j = await r.json();
     setBusy(false);
-    if (j.ok) { toast("Profile updated"); refresh(); } else toast(j.error || "Failed");
+    if (j.ok) { toast("Profile updated"); refresh(); } else toast(j.error || 'Unable to update profile. Please try again.');
   };
 
   const tabs = [

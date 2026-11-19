@@ -29,7 +29,7 @@ function TrackInner() {
       const j = await r.json();
       if (!j.ok) throw new Error(j.error || "Order not found");
       setOrder(j.order);
-    } catch (e: any) { setErr(e.message); }
+    } catch (e: any) { setErr(e.message || 'Unable to look up that order. Please check the number and try again.'); }
     setBusy(false);
   };
 
@@ -43,7 +43,7 @@ function TrackInner() {
         <input value={num} onChange={(e) => setNum(e.target.value)} onKeyDown={(e) => e.key === "Enter" && track()} placeholder="Enter order number — VPB-2026-XXXX" className="input !border-0 !bg-transparent" />
         <button onClick={track} disabled={busy || checkingAccount} className="btn-primary shrink-0 disabled:opacity-60">{busy ? <ButtonLoader label="Tracking…" /> : "Track"}</button>
       </div>
-      {err && <p className="mt-3 rounded-xl bg-red-50 px-4 py-2.5 text-center text-sm font-semibold text-red-700">{err} — check the number on your confirmation screen or account page.</p>}
+      {err && <p className="mt-3 rounded-xl bg-red-50 px-4 py-2.5 text-center text-sm font-semibold text-red-700">{err}</p>}
 
       <SectionLoader active={busy} label="Loading order tracking…" compact={!!order} />
       {order && (

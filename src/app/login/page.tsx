@@ -63,7 +63,7 @@ function LoginForm() {
     setBusy(false);
     if (!j.ok) {
       if (j.cooldown) setCooldown(j.cooldown);
-      setErr(j.error);
+      setErr(j.error || 'Unable to send OTP. Please try again.');
       return;
     }
     setMasked(j.masked);
@@ -91,7 +91,7 @@ function LoginForm() {
         setStep("phone");
         return;
       }
-      setErr(j.error);
+      setErr(j.error || 'Verification failed. Please try again.');
       return;
     }
     setVerified(true);
