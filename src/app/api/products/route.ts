@@ -1,4 +1,5 @@
 import { publicProduct, reviewRating, reviewCount } from '@/lib/catalog';
+import { rateLimitSource } from '@/lib/delivery-server';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { products, categories } from "@/db/schema";
@@ -7,6 +8,7 @@ import { and, or, ilike, eq, gte, lte, desc, asc } from "drizzle-orm";
 export async function GET(req: Request) {
   try {
     const u = new URL(req.url);
+    try { await rateLimitSource(req, 'catalog', 300, 60); } catch { /* Serve catalog even if rate limit tracking fails */ }
     const q = (u.searchParams.get("q") || "").trim();
     const cat = u.searchParams.get("cat") || "";
     const cord = u.searchParams.get("cord") || "";

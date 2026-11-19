@@ -3,7 +3,7 @@ import { validateSpecifications } from '@/lib/product-specs';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { deliveryAudit, reviews, products, categories, orders, orderItems, users, banners, siteContent } from "@/db/schema";
-import { eq, desc, sql, or, ne, and, getTableColumns } from "drizzle-orm";
+import { eq, desc, sql, or, ne, and, ilike, getTableColumns } from "drizzle-orm";
 import { slugify } from "@/lib/auth";
 import { sameOrigin, DeliveryError } from "@/lib/shipment-rules";
 import { activeUser, rateLimit, deliveryFailure } from "@/lib/delivery-server";
@@ -26,7 +26,7 @@ export async function GET(req: Request) {
         db.select({ n: sql<number>`count(*)` }).from(users),
         db.select({ t: sql<number>`coalesce(sum(total),0)` }).from(orders),
         db.select().from(products).where(sql`stock_quantity <= 15`),
-        db.select().from(orders).orderBy(desc(orders.createdAt)).limit(8),
+        db.select({ id: orders.id, orderNumber: orders.orderNumber, customerName: orders.customerName, total: orders.total, createdAt: orders.createdAt, orderStatus: orders.orderStatus, paymentStatus: orders.paymentStatus }).from(orders).orderBy(desc(orders.createdAt)).limit(8),
         db.select({ id: users.id, name: users.name, phone: users.phone, email: users.email, role: users.role, active: users.active, createdAt: users.createdAt }).from(users).orderBy(desc(users.createdAt)).limit(6),
         db.select({ s: orders.orderStatus, n: sql<number>`count(*)` }).from(orders).groupBy(orders.orderStatus),
       ]);
@@ -34,23 +34,27 @@ export async function GET(req: Request) {
       return NextResponse.json({ ok: true, stats: { products: Number(pc[0]?.n || 0), orders: Number(oc[0]?.n || 0), customers: Number(uc[0]?.n || 0), sales: Number(sales[0]?.t || 0), low: low.length, out: low.filter((p: any) => p.stockQuantity <= 0).length }, low, recentOrders, recentUsers, byStatus });
     }
     if (res === "products") {
-      let rows = await db.select({ p: products, c: categories }).from(products).leftJoin(categories, eq(products.categoryId, categories.id)).orderBy(desc(products.createdAt));
-      let data = rows.map((r) => ({ ...r.p, categoryName: r.c?.name }));
-      if (q) data = data.filter((p: any) => (p.name + p.sku + (p.brand || "")).toLowerCase().includes(q.toLowerCase()));
+      const productConds: any[] = [];
+      if (q) { const term = '%' + q.replace(/[\\%_]/g, '\\$&') + '%'; productConds.push(or(ilike(products.name, term), ilike(products.sku, term), ilike(products.brand, term))); }
+      const rows = await db.select({ p: products, c: categories }).from(products).leftJoin(categories, eq(products.categoryId, categories.id)).where(productConds.length ? and(...productConds) : undefined).orderBy(desc(products.createdAt)).limit(200);
+      const data = rows.map((r) => ({ ...r.p, categoryName: r.c?.name }));
       return NextResponse.json({ ok: true, products: data });
     }
     if (res === 'reviews') return NextResponse.json({ ok: true, reviews: await db.select({ ...getTableColumns(reviews), productName: products.name }).from(reviews).leftJoin(products, eq(products.id, reviews.productId)).orderBy(desc(reviews.createdAt)).limit(200) });
     if (res === "categories") return NextResponse.json({ ok: true, categories: await db.select().from(categories).orderBy(categories.sortOrder) });
     if (res === "orders") {
-      let all = await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(200);
-      if (q) all = all.filter((o) => (o.orderNumber + (o.customerName || "") + (o.customerPhone || "")).toLowerCase().includes(q.toLowerCase()));
+      const safeOrderCols = { id: orders.id, orderNumber: orders.orderNumber, userId: orders.userId, createdAt: orders.createdAt, updatedAt: orders.updatedAt, customerName: orders.customerName, customerPhone: orders.customerPhone, customerEmail: orders.customerEmail, total: orders.total, subtotal: orders.subtotal, discount: orders.discount, shippingCharge: orders.shippingCharge, orderStatus: orders.orderStatus, paymentStatus: orders.paymentStatus, paymentMethod: orders.paymentMethod, payuTxnId: orders.payuTxnId, payuPaymentId: orders.payuPaymentId, shippingAddress: orders.shippingAddress, paidAt: orders.paidAt };
+      const orderConds: any[] = [];
+      if (q) { const term = '%' + q.replace(/[\\%_]/g, '\\$&') + '%'; orderConds.push(or(ilike(orders.orderNumber, term), ilike(orders.customerName, term), ilike(orders.customerPhone, term))); }
       const status = u.searchParams.get("status") || "";
-      if (status) all = all.filter((o) => o.orderStatus === status);
+      if (status) orderConds.push(eq(orders.orderStatus, status));
+      const all = await db.select(safeOrderCols).from(orders).where(orderConds.length ? and(...orderConds) : undefined).orderBy(desc(orders.createdAt)).limit(200);
       return NextResponse.json({ ok: true, orders: all });
     }
     if (res === "order") {
       const id = u.searchParams.get("id") || "";
-      const rows = await db.select().from(orders).where(eq(orders.id, id));
+      if (!id) return NextResponse.json({ ok: false, error: "Order ID required" }, { status: 400 });
+      const rows = await db.select({ id: orders.id, orderNumber: orders.orderNumber, userId: orders.userId, createdAt: orders.createdAt, updatedAt: orders.updatedAt, customerName: orders.customerName, customerPhone: orders.customerPhone, customerEmail: orders.customerEmail, total: orders.total, subtotal: orders.subtotal, discount: orders.discount, shippingCharge: orders.shippingCharge, orderStatus: orders.orderStatus, paymentStatus: orders.paymentStatus, paymentMethod: orders.paymentMethod, payuTxnId: orders.payuTxnId, payuPaymentId: orders.payuPaymentId, shippingAddress: orders.shippingAddress, paidAt: orders.paidAt, paymentData: orders.paymentData }).from(orders).where(eq(orders.id, id));
       if (!rows.length) return NextResponse.json({ ok: false, error: "Not found" }, { status: 404 });
       const items = await db.select().from(orderItems).where(eq(orderItems.orderId, id));
       return NextResponse.json({ ok: true, order: { ...rows[0], items } });
@@ -145,14 +149,21 @@ export async function POST(req: Request) {
     if (res === "banner") {
       const d = body.data;
       if (!d || typeof d.title !== 'string' || !d.title.trim()) throw new DeliveryError('Title required');
-      const payload = { title: d.title, subtitle: d.subtitle || '', image: d.image || '', link: d.link || '/shop', active: d.active !== false };
+      const rawLink = typeof d.link === 'string' ? d.link : '/shop';
+      if (rawLink.length > 220) throw new DeliveryError('Banner link too long');
+      const isSafePath = /^\/[a-zA-Z0-9/_\-?=&#%.]*$/.test(rawLink);
+      const isSafeUrl = /^https:\/\/(www\.)?instagram\.com\//.test(rawLink) || /^https:\/\/(www\.)?vpbbarelimacker\.com\//.test(rawLink);
+      if (rawLink !== '' && !isSafePath && !isSafeUrl) throw new DeliveryError('Banner link must be a relative path or a known https URL');
+      const rawImage = typeof d.image === 'string' ? d.image : '';
+      if (rawImage.length > 500) throw new DeliveryError('Banner image URL too long');
+      const payload = { title: String(d.title).trim().slice(0, 200), subtitle: String(d.subtitle || '').slice(0, 300), image: rawImage, link: rawLink || '/shop', active: d.active !== false };
       const [saved] = body.id ? await tx.update(banners).set(payload).where(eq(banners.id, body.id)).returning({ id: banners.id }) : await tx.insert(banners).values(payload).returning({ id: banners.id });
       if (!saved) throw new DeliveryError('Banner not found', 404);
       return NextResponse.json({ ok: true, id: saved.id });
     }
     if (res === "content") {
       const { key, value } = body;
-      if (typeof key !== 'string' || !key.trim() || key.length > 80 || typeof value !== 'string') throw new DeliveryError('Content key and value required');
+      if (typeof key !== 'string' || !key.trim() || key.length > 80 || typeof value !== 'string' || value.length > 2000) throw new DeliveryError('Content key and value required (value max 2000 characters)');
       const [saved] = await tx.insert(siteContent).values({ key, value }).onConflictDoUpdate({ target: siteContent.key, set: { value, updatedAt: new Date() } }).returning({ id: siteContent.id });
       return NextResponse.json({ ok: true, id: saved.id });
     }

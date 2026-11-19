@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     const u = new URL(req.url);
     if (u.searchParams.get("all") === "1" && me.role === "admin") {
       const all = await db.select().from(orders).orderBy(desc(orders.createdAt)).limit(200);
-      return NextResponse.json({ ok: true, orders: all });
+      return NextResponse.json({ ok: true, orders: all.map(publicOrder) });
     }
     const mine = await db.select().from(orders).where(eq(orders.userId, me.id)).orderBy(desc(orders.createdAt));
     const withItems = await Promise.all(mine.map(async (o) => {

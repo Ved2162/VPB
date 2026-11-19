@@ -28,16 +28,18 @@ function isValidPhone(phone: string): boolean {
 }
 
 export async function GET(req: Request) {
+  try { await rateLimitSource(req, 'auth-check', 500, 60); } catch { return NextResponse.json({ ok: true, user: null }); }
   const u = getUserFromHeader(req);
   if (!u) return NextResponse.json({ ok: true, user: null });
-  const rows = await db.select().from(users).where(eq(users.id, u.id));
+  // Explicit column select — never expose passwordHash, sessionVersion, or internal fields
+  const rows = await db.select({ id: users.id, name: users.name, phone: users.phone, email: users.email, role: users.role, active: users.active, sessionVersion: users.sessionVersion, createdAt: users.createdAt }).from(users).where(eq(users.id, u.id));
   if (!rows.length || !rows[0].active || rows[0].sessionVersion !== (u.sessionVersion ?? 0)) {
     const response = NextResponse.json({ ok: true, user: null });
     response.cookies.set(COOKIE, '', { httpOnly: true, path: '/', maxAge: 0, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' });
     return response;
   }
-  const { passwordHash: _p, ...safe } = rows[0] as any;
-  const res = NextResponse.json({ ok: true, user: safe });
+  const { sessionVersion: _sv, ...safeUser } = rows[0];
+  const res = NextResponse.json({ ok: true, user: safeUser });
 
   // Sliding window: re-issue cookie if token expires in less than 7 days
   const cookie = req.headers.get("cookie") || "";

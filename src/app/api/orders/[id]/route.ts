@@ -60,7 +60,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (body.customerName !== undefined && (typeof body.customerName !== 'string' || body.customerName.length > 120)) throw new DeliveryError('Invalid customer name');
     if (body.customerPhone !== undefined && (typeof body.customerPhone !== 'string' || body.customerPhone.length > 20)) throw new DeliveryError('Invalid customer phone');
     if (body.customerEmail !== undefined && (typeof body.customerEmail !== 'string' || body.customerEmail.length > 180)) throw new DeliveryError('Invalid customer email');
-    if (body.shippingAddress !== undefined && (typeof body.shippingAddress !== 'object' || Array.isArray(body.shippingAddress))) throw new DeliveryError('Invalid shipping address');
+    if (body.shippingAddress !== undefined) {
+      if (typeof body.shippingAddress !== 'object' || Array.isArray(body.shippingAddress)) throw new DeliveryError('Invalid shipping address');
+      const ADDR_KEYS = ['name', 'phone', 'addressLine', 'city', 'state', 'pincode', 'landmark'];
+      const ADDR_MAXLEN: Record<string, number> = { name: 120, phone: 20, addressLine: 220, city: 100, state: 100, pincode: 10, landmark: 200 };
+      for (const [k, v] of Object.entries(body.shippingAddress as Record<string, unknown>)) {
+        if (!ADDR_KEYS.includes(k)) throw new DeliveryError(`Invalid address field: ${k}`);
+        if (typeof v !== 'string' || v.length > (ADDR_MAXLEN[k] || 200)) throw new DeliveryError(`Address field ${k} is too long`);
+      }
+    }
     if (body.adminNotes !== undefined && (typeof body.adminNotes !== 'string' || body.adminNotes.length > 1000)) throw new DeliveryError('Admin notes too long');
     const [before] = await db.select().from(orders).where(eq(orders.id, id));
     if (!before) throw new DeliveryError('Order not found', 404);
