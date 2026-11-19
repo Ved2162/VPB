@@ -53,6 +53,8 @@ export default function CheckoutPage() {
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [err, setErr] = useState("");
   const [retryAfter, setRetryAfter] = useState(0);
+  const [attemptCount, setAttemptCount] = useState(0);
+  const MAX_ATTEMPTS = 3;
 
   const subtotal = order?.subtotal ?? cartSubtotal;
   const discount = order?.discount ?? orderDiscount(subtotal);
@@ -155,6 +157,7 @@ export default function CheckoutPage() {
       if (!result.ok || !result.order) throw new Error('Order details are temporarily unavailable. Check again or visit My Orders.');
       setOrder(result.order);
       setPaymentFailed(confirmation.paymentStatus === 'failed');
+      if (typeof confirmation.attemptCount === 'number') setAttemptCount(confirmation.attemptCount);
       if (confirmation.paymentStatus !== 'paid') {
         setVerificationPaused(false);
         setErr(confirmation.paymentStatus === 'failed'
@@ -224,12 +227,14 @@ export default function CheckoutPage() {
         }
         return;
       }
+      if (typeof result.attemptCount === 'number') setAttemptCount(result.attemptCount);
       if (result.alreadyPaid) { await verifyReceipt(result.orderId); return; }
       if (result.needsVerification) {
         // A previous PayU attempt is still pending — do not auto-verify (can show confusing errors).
         // Store the order and let the customer check status manually.
         sessionStorage.setItem('vpb-payu-order', result.orderId);
         setPendingReceipt(result.orderId); setPaymentFailed(false); setStep(3);
+        if (typeof result.attemptCount === 'number') setAttemptCount(result.attemptCount);
         pollCount.current = 0; setVerificationPaused(false);
         return;
       }
@@ -349,23 +354,129 @@ export default function CheckoutPage() {
                 )}
 
                 {step >= 3 && (
-                  <div className="card p-6">
-                    <h3 className="font-serif text-xl font-bold">Step 4 — Payment</h3>
-                    <p className="mt-1 flex items-center gap-1.5 text-xs text-stone-500"><Lock size={12} /> Secure payment. Card details are handled by PayU.</p>
-                    <p className="mt-3 rounded-xl bg-[#fff4de] px-3 py-2 text-[12.5px] font-semibold text-[#7a5b1e]">Choose your payment method on PayU. After payment, you will return here for order confirmation.</p>
-                    {err && (
-                      <div className="mt-2 flex items-start gap-2 rounded-xl bg-red-50 p-3 text-sm font-semibold text-red-800">
-                        <AlertTriangle size={16} className="mt-0.5 shrink-0" />
-                        <span className="flex-1">
-                          {err}
-                          {retryAfter > 0 && <span className="ml-1 font-bold">({retryAfter}s)</span>}
-                        </span>
-                        {retryAfter <= 0 && <button onClick={() => { setErr(''); placeOrder(); }} className="inline-flex items-center gap-1 rounded-full bg-white px-3 py-1 text-xs font-bold text-red-800 ring-1 ring-red-200"><RefreshCw size={12} /> Retry</button>}
+                  <div className="card overflow-hidden">
+                    {/* Rate-limit cooldown bar */}
+                    {retryAfter > 0 && (
+                      <div className="rounded-t-[inherit] bg-amber-50 px-5 py-3 text-sm font-semibold text-amber-800 flex items-center gap-2">
+                        <span className="inline-block h-2 w-2 rounded-full bg-amber-400" />
+                        Too many attempts — please wait <b>{retryAfter}s</b> before retrying
                       </div>
                     )}
-                    <button onClick={() => placeOrder()} disabled={placing || retryAfter > 0} className="btn-primary mt-4 w-full !py-4 !text-[15px] disabled:opacity-60">
-                      {placing ? <ButtonLoader label="Opening PayU..." /> : retryAfter > 0 ? `Please wait ${retryAfter}s…` : pendingReceipt ? (paymentFailed ? "Retry payment" : "Check payment status") : <><Lock size={15} /> Continue to PayU</>}
-                    </button>
+
+                    <div className="p-6">
+                      {/* ── State A: No pending order yet — fresh checkout ── */}
+                      {!pendingReceipt && !err && (
+                        <>
+                          <h3 className="font-serif text-xl font-bold">Step 4 — Payment</h3>
+                          <p className="mt-1 flex items-center gap-1.5 text-xs text-stone-500"><Lock size={12} /> Secure payment. Card details are handled by PayU.</p>
+                          <p className="mt-3 rounded-xl bg-[#fff4de] px-4 py-3 text-[13px] text-[#7a5b1e]">Choose your payment method on PayU. After payment, you will return here for confirmation.</p>
+                          <button onClick={() => placeOrder()} disabled={placing || retryAfter > 0} className="btn-primary mt-5 w-full !py-4 !text-[15px] disabled:opacity-60">
+                            {placing ? <ButtonLoader label="Opening PayU…" /> : <><Lock size={15} /> Continue to PayU</>}
+                          </button>
+                        </>
+                      )}
+
+                      {/* ── State B: Payment not completed, retries remaining ── */}
+                      {pendingReceipt && !paymentFailed && attemptCount < MAX_ATTEMPTS && !err && (
+                        <>
+                          <div className="flex items-start gap-3">
+                            <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff4de] text-[#c9a24b]">
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            </span>
+                            <div>
+                              <p className="font-serif text-lg font-bold text-[#1c0f0a]">Payment not completed</p>
+                              <p className="mt-1 text-sm text-stone-500">Your order is safely saved. You can continue with payment whenever you're ready.</p>
+                              <p className="mt-1 text-xs text-stone-400">No need to place your order again.</p>
+                            </div>
+                          </div>
+                          <div className="mt-5 flex flex-col gap-2.5">
+                            <button onClick={() => { setErr(''); placeOrder(pendingReceipt); }} disabled={placing || retryAfter > 0} className="btn-primary w-full !py-3.5 disabled:opacity-60">
+                              {placing ? <ButtonLoader label="Opening PayU…" /> : <><Lock size={14} /> Continue to payment</>}
+                            </button>
+                            <Link href="/account" className="btn-ghost w-full text-center">Return to my orders</Link>
+                          </div>
+                        </>
+                      )}
+
+                      {/* ── State C: Failed / cancelled — show retry with count context ── */}
+                      {pendingReceipt && paymentFailed && attemptCount < MAX_ATTEMPTS && !err && (
+                        <>
+                          <div className="flex items-start gap-3">
+                            <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff4de] text-[#c9a24b]">
+                              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                            </span>
+                            <div>
+                              <p className="font-serif text-lg font-bold text-[#1c0f0a]">Payment not completed</p>
+                              <p className="mt-1 text-sm text-stone-500">Your order is safely saved. You can try paying again — the same order will be used.</p>
+                            </div>
+                          </div>
+                          <div className="mt-5 flex flex-col gap-2.5">
+                            <button onClick={() => { setErr(''); placeOrder(pendingReceipt); }} disabled={placing || retryAfter > 0} className="btn-primary w-full !py-3.5 disabled:opacity-60">
+                              {placing ? <ButtonLoader label="Opening PayU…" /> : <><Lock size={14} /> Try payment again</>}
+                            </button>
+                            <Link href="/account" className="btn-ghost w-full text-center">Return to my orders</Link>
+                          </div>
+                        </>
+                      )}
+
+                      {/* ── State D: Pending — payment may still be processing ── */}
+                      {pendingReceipt && !paymentFailed && !err && attemptCount >= MAX_ATTEMPTS && (
+                        <>
+                          <div className="flex items-start gap-3">
+                            <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-stone-100 text-stone-500">
+                              <Loader2 size={18} className="animate-spin" />
+                            </span>
+                            <div>
+                              <p className="font-serif text-lg font-bold text-[#1c0f0a]">Payment is being verified</p>
+                              <p className="mt-1 text-sm text-stone-500">Your payment may still be processing. Your order is saved — we'll update its status once confirmed.</p>
+                            </div>
+                          </div>
+                          <button onClick={() => verifyReceipt(pendingReceipt)} disabled={placing} className="btn-ghost mt-5 w-full !py-3.5">
+                            {placing ? <ButtonLoader label="Checking…" /> : <><RefreshCw size={14} /> Check payment status</>}
+                          </button>
+                        </>
+                      )}
+
+                      {/* ── State E: 3+ attempts or explicit error — verification required ── */}
+                      {(err || (pendingReceipt && attemptCount >= MAX_ATTEMPTS && paymentFailed)) && (
+                        <>
+                          <div className="flex items-start gap-3">
+                            <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-50 text-amber-600">
+                              <AlertTriangle size={17} />
+                            </span>
+                            <div>
+                              <p className="font-serif text-lg font-bold text-[#1c0f0a]">
+                                {err ? (retryAfter > 0 ? 'Too many attempts' : "We’re unable to confirm your payment") : "We’re unable to confirm your payment"}
+                              </p>
+                              <p className="mt-1 text-sm text-stone-500">
+                                {err || 'Your order is saved. Please check your payment status before attempting another transaction.'}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-5 flex flex-col gap-2.5">
+                            {pendingReceipt && retryAfter <= 0 && (
+                              <button onClick={() => verifyReceipt(pendingReceipt)} disabled={placing} className="btn-primary w-full !py-3.5">
+                                {placing ? <ButtonLoader label="Checking…" /> : <><RefreshCw size={14} /> Check payment status</>}
+                              </button>
+                            )}
+                            {pendingReceipt && paymentFailed && retryAfter <= 0 && (
+                              <button onClick={() => { setErr(''); placeOrder(pendingReceipt); }} disabled={placing} className="btn-ghost w-full !py-3">
+                                {placing ? <ButtonLoader label="Opening PayU…" /> : 'Try payment again'}
+                              </button>
+                            )}
+                            {!pendingReceipt && retryAfter <= 0 && (
+                              <button onClick={() => { setErr(''); placeOrder(); }} disabled={placing} className="btn-ghost w-full !py-3">
+                                {placing ? <ButtonLoader label="Opening PayU…" /> : <><RefreshCw size={14} /> Retry</>}
+                              </button>
+                            )}
+                          </div>
+                          <p className="mt-4 text-center text-xs text-stone-400">Need assistance? Contact us on <a href="https://wa.me/919081111697" className="font-semibold text-[#7a1f1f] underline">WhatsApp +91 90811 11697</a></p>
+                        </>
+                      )}
+
+                      {/* Secure badge — always shown */}
+                      <p className="mt-5 flex items-center justify-center gap-1.5 text-[11px] text-stone-400"><Lock size={10} /> Secured by PayU · 256-bit encryption</p>
+                    </div>
                   </div>
                 )}
               </div>

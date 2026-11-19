@@ -4,7 +4,7 @@ import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { orders, users, payuAttempts } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { preparePayuCheckout, reconcilePayu, isRetiredSandboxAttempt, retiredSandboxResult } from '@/lib/payu-payments';
 import { payuConfig } from '@/lib/payu';
 import { activeUser, deliveryFailure, rateLimit } from '@/lib/delivery-server';
@@ -53,13 +53,17 @@ export async function POST(req: Request) {
     // provider-pending ID or create a replacement while its result is unknown.
     if (o[0].payuTxnId && o[0].paymentStatus !== 'failed') {
       payuLog('retry_blocked', { orderId: o[0].id, txnid: o[0].payuTxnId, status: o[0].paymentStatus });
-      return NextResponse.json({ ok: true, needsVerification: true, orderId: o[0].id });
+      const [cntRow] = await db.select({ n: sql<number>`count(*)::int` }).from(payuAttempts).where(eq(payuAttempts.orderId, o[0].id));
+      return NextResponse.json({ ok: true, needsVerification: true, orderId: o[0].id, attemptCount: Number(cntRow?.n || 0) });
     }
 
     if (o[0].orderStatus !== 'placed') throw new DeliveryError('This order cannot be reopened for payment', 409);
 
     await reserveStock(tx, o[0].id, o[0].cartSnapshot);
-    return NextResponse.json(await preparePayuCheckout(tx, o[0], body.email));
+    const checkoutResult = await preparePayuCheckout(tx, o[0], body.email);
+    const [countRow] = await db.select({ n: sql<number>`count(*)::int` }).from(payuAttempts).where(eq(payuAttempts.orderId, o[0].id));
+    const attemptCount = Number(countRow?.n || 0);
+    return NextResponse.json({ ...checkoutResult, attemptCount });
     });
   } catch (e: any) {
     payuLog('retry_rejected', { httpStatus: e instanceof DeliveryError ? e.status : 500, code: 'retry_unavailable' });

@@ -4,7 +4,7 @@ import { readJson, canonicalJson, isUuid } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { orders, products, users, payuAttempts } from "@/db/schema";
-import { and, eq, inArray, or, sql } from "drizzle-orm";
+import { and, eq, inArray, or, sql, count } from "drizzle-orm";
 import { orderNumber } from "@/lib/auth";
 import { payuConfig, paymentEmail } from '@/lib/payu';
 import { preparePayuCheckout, isRetiredSandboxAttempt, retiredSandboxResult } from '@/lib/payu-payments';
@@ -120,7 +120,9 @@ export async function POST(req: Request) {
       await reserveStock(tx, ins[0].id, cartSnapshot, true);
       order = ins[0];
     }
-    return NextResponse.json(await preparePayuCheckout(tx, order, email));
+    const checkoutOut = await preparePayuCheckout(tx, order, email);
+    const [cntRow] = await tx.select({ n: sql<number>`count(*)::int` }).from(payuAttempts).where(eq(payuAttempts.orderId, order.id));
+    return NextResponse.json({ ...checkoutOut, attemptCount: Number(cntRow?.n || 0) });
     });
   } catch (e: any) {
     payuLog('initiation_rejected', { httpStatus: e instanceof DeliveryError ? e.status : 500, code: 'checkout_unavailable' });
