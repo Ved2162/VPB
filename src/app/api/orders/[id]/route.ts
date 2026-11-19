@@ -6,7 +6,7 @@ import { sameOrigin, DeliveryError } from '@/lib/shipment-rules';
 import { readJson } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
-import { orders, orderItems, shipments, shipmentHistory, users, deliveryAudit } from "@/db/schema";
+import { orders, orderItems, shipments, shipmentHistory, users, deliveryAudit, payuAttempts, orderInvoices, invoiceCancellations } from "@/db/schema";
 import { and, desc, eq } from "drizzle-orm";
 import { activeUser, rateLimit, deliveryFailure } from "@/lib/delivery-server";
 
@@ -112,6 +112,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       if (!order) throw new DeliveryError('Order not found', 404);
       // Release any held stock before deleting
       await releaseStock(tx, id);
+      // Delete child rows that have no onDelete cascade on orders.id:
+      // invoice_cancellations → order_invoices → payu_attempts (all reference orders.id without cascade)
+      await tx.delete(invoiceCancellations).where(eq(invoiceCancellations.orderId, id));
+      await tx.delete(orderInvoices).where(eq(orderInvoices.orderId, id));
+      await tx.delete(payuAttempts).where(eq(payuAttempts.orderId, id));
       // orderItems, shipments, shipmentHistory, orderNotifications, inventoryReservations cascade via FK onDelete
       await tx.delete(orders).where(eq(orders.id, id));
       await tx.insert(deliveryAudit).values({ actorId: me.id, resource: 'order', resourceId: id, changes: { operation: 'delete', orderNumber: order.orderNumber, outcome: 'success' } });
