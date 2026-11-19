@@ -8,11 +8,114 @@ import { apiFetch } from "@/lib/api-client";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { BrandedLink as Link } from "@/components/loading";
-import { LayoutDashboard, Package, Tags, ShoppingCart, Users, Megaphone, LogOut, Plus, Trash2, Pencil, Eye } from "lucide-react";
+import { LayoutDashboard, Package, Tags, ShoppingCart, Users, Megaphone, LogOut, Plus, Trash2, Pencil, Eye, ChevronDown, ChevronRight } from "lucide-react";
 import { useAuth, useToast } from "@/lib/store";
 import { money } from "@/lib/data";
 import { SafeImg } from "@/components/site";
 import { ProductImagePicker } from '@/components/product-image-picker';
+
+// Collapsible order group component — open by default for active statuses, collapsed for placed/cancelled
+function OrderGroupList({ orders, selOrder, setSelOrder, toast, apiFetch, load, money, busy }: {
+  orders: any[]; selOrder: any; setSelOrder: (o: any) => void;
+  toast: (m: string) => void; apiFetch: typeof import('@/lib/api-client').apiFetch;
+  load: (t?: string) => void; money: (n: number) => string; busy: boolean;
+}) {
+  const STATUS_CONFIG: Record<string, { label: string; pill: string; headerBg: string; defaultOpen: boolean }> = {
+    confirmed:        { label: "✅ Confirmed — Ready to fulfil", pill: "bg-green-100 text-green-800",   headerBg: "bg-green-50 border-green-200",   defaultOpen: true  },
+    packed:           { label: "📦 Packed",                      pill: "bg-blue-100 text-blue-800",     headerBg: "bg-blue-50 border-blue-200",     defaultOpen: true  },
+    shipped:          { label: "🚚 Shipped",                     pill: "bg-indigo-100 text-indigo-800", headerBg: "bg-indigo-50 border-indigo-200", defaultOpen: true  },
+    out_for_delivery: { label: "🛵 Out for Delivery",            pill: "bg-cyan-100 text-cyan-800",     headerBg: "bg-cyan-50 border-cyan-200",     defaultOpen: true  },
+    delivered:        { label: "✔ Delivered",                    pill: "bg-emerald-100 text-emerald-800",headerBg:"bg-emerald-50 border-emerald-200",defaultOpen: false },
+    placed:           { label: "🕐 Placed — Awaiting payment",   pill: "bg-amber-100 text-amber-800",   headerBg: "bg-amber-50 border-amber-200",   defaultOpen: false },
+    cancelled:        { label: "✖ Cancelled",                    pill: "bg-red-100 text-red-800",       headerBg: "bg-red-50 border-red-200",       defaultOpen: false },
+  };
+  const ORDER_OF_GROUPS = ["confirmed", "packed", "shipped", "out_for_delivery", "delivered", "placed", "cancelled"];
+
+  const grouped: Record<string, any[]> = {};
+  for (const o of orders) {
+    const k = o.orderStatus || "placed";
+    if (!grouped[k]) grouped[k] = [];
+    grouped[k].push(o);
+  }
+
+  const initialOpen: Record<string, boolean> = {};
+  for (const status of ORDER_OF_GROUPS) {
+    initialOpen[status] = STATUS_CONFIG[status]?.defaultOpen ?? true;
+  }
+  const [open, setOpen] = useState<Record<string, boolean>>(initialOpen);
+
+  const toggle = (status: string) => setOpen(prev => ({ ...prev, [status]: !prev[status] }));
+
+  const groups = ORDER_OF_GROUPS.filter(s => grouped[s]?.length);
+
+  if (!groups.length) return <div className="card p-10 text-center text-sm text-stone-500">No orders found.</div>;
+
+  return (
+    <div className="space-y-3">
+      {groups.map(status => {
+        const group = grouped[status];
+        const cfg = STATUS_CONFIG[status] || { label: status, pill: "bg-stone-100 text-stone-700", headerBg: "bg-stone-50 border-stone-200", defaultOpen: true };
+        const isOpen = open[status] ?? cfg.defaultOpen;
+        return (
+          <div key={status} className="card overflow-hidden">
+            {/* Clickable header — toggles section */}
+            <button
+              onClick={() => toggle(status)}
+              className={`flex w-full items-center justify-between border-b px-4 py-3 text-[13px] font-bold transition-colors hover:brightness-95 ${cfg.headerBg}`}
+            >
+              <span className="flex items-center gap-2">
+                {isOpen ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                {cfg.label}
+                <span className="rounded-full bg-white/70 px-2 py-0.5 text-xs font-bold">{group.length}</span>
+              </span>
+              <span className="text-[11px] font-normal opacity-60">{isOpen ? "Click to collapse" : "Click to expand"}</span>
+            </button>
+
+            {/* Collapsible table */}
+            {isOpen && (
+              <div className="overflow-x-auto">
+                <table className="admin-table min-w-[560px]">
+                  <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th></th></tr></thead>
+                  <tbody>{group.map((o) => (
+                    <tr key={o.id}
+                      onClick={async () => {
+                        try {
+                          const j = await apiFetch("/api/admin?res=order&id=" + o.id, { credentials: "include" }).then((r) => r.json());
+                          if (j.ok) setSelOrder(j.order); else toast("Unable to open order. Please retry.");
+                        } catch { toast("Network error"); }
+                      }}
+                      className={`cursor-pointer hover:bg-[#fff9ec] ${selOrder?.id === o.id ? "bg-[#fff4de]" : ""}`}
+                    >
+                      <td><b>{o.orderNumber}</b><br /><span className="text-xs text-stone-400">{new Date(o.createdAt).toLocaleDateString("en-IN")}</span></td>
+                      <td>{o.customerName}<br /><span className="text-xs text-stone-400">{o.customerPhone}</span></td>
+                      <td><b>{money(o.total)}</b></td>
+                      <td><span className={`pill text-[11px] ${o.paymentStatus === "paid" ? "bg-green-100 text-green-800" : o.paymentStatus === "failed" ? "bg-red-100 text-red-800" : o.paymentStatus === "refunded" ? "bg-purple-100 text-purple-800" : "bg-amber-100 text-amber-800"}`}>{o.paymentStatus}</span></td>
+                      <td>
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            if (!confirm("Delete order " + o.orderNumber + "? This cannot be undone.")) return;
+                            try {
+                              const r = await apiFetch("/api/orders/" + o.id, { method: "DELETE", credentials: "include" });
+                              const j = await r.json();
+                              if (r.ok && j.ok) { toast("Order deleted"); if (selOrder?.id === o.id) setSelOrder(null); load("orders"); }
+                              else toast("Unable to delete order. Please retry.");
+                            } catch { toast("Network error"); }
+                          }}
+                          className="rounded-lg bg-red-50 p-1.5 text-red-700 hover:bg-red-100"
+                        ><Trash2 size={13} /></button>
+                      </td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 export default function Admin() {
   const { me, loading, logout } = useAuth();
@@ -225,50 +328,8 @@ export default function Admin() {
             <button onClick={() => load()} className="btn-ghost !py-2 text-[13px]">Search</button>
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_420px]">
-            {/* ORDER LIST — grouped by status */}
-            <div className="space-y-6">
-              {(() => {
-                const statusConfig: Record<string, { label: string; pill: string; headerBg: string }> = {
-                  confirmed: { label: "✅ Confirmed — Ready to fulfil", pill: "bg-green-100 text-green-800", headerBg: "bg-green-50 border-green-200" },
-                  packed:    { label: "📦 Packed", pill: "bg-blue-100 text-blue-800", headerBg: "bg-blue-50 border-blue-200" },
-                  shipped:   { label: "🚚 Shipped", pill: "bg-indigo-100 text-indigo-800", headerBg: "bg-indigo-50 border-indigo-200" },
-                  out_for_delivery: { label: "🛵 Out for Delivery", pill: "bg-cyan-100 text-cyan-800", headerBg: "bg-cyan-50 border-cyan-200" },
-                  delivered: { label: "✔ Delivered", pill: "bg-emerald-100 text-emerald-800", headerBg: "bg-emerald-50 border-emerald-200" },
-                  placed:    { label: "🕐 Placed — Awaiting payment", pill: "bg-amber-100 text-amber-800", headerBg: "bg-amber-50 border-amber-200" },
-                  cancelled: { label: "✖ Cancelled", pill: "bg-red-100 text-red-800", headerBg: "bg-red-50 border-red-200" },
-                };
-                const order_of_groups = ["confirmed", "packed", "shipped", "out_for_delivery", "delivered", "placed", "cancelled"];
-                const grouped: Record<string, any[]> = {};
-                for (const o of orders) {
-                  const k = o.orderStatus || "placed";
-                  if (!grouped[k]) grouped[k] = [];
-                  grouped[k].push(o);
-                }
-                return order_of_groups.map(status => {
-                  const group = grouped[status];
-                  if (!group?.length) return null;
-                  const cfg = statusConfig[status] || { label: status, pill: "bg-stone-100 text-stone-700", headerBg: "bg-stone-50 border-stone-200" };
-                  return (
-                    <div key={status} className="card overflow-hidden">
-                      <div className={`border-b px-4 py-2.5 text-[13px] font-bold ${cfg.headerBg}`}>{cfg.label} <span className="ml-1 rounded-full bg-white/70 px-2 py-0.5 text-xs">{group.length}</span></div>
-                      <table className="admin-table min-w-[560px]">
-                        <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th></th></tr></thead>
-                        <tbody>{group.map((o) => (
-                          <tr key={o.id} onClick={async () => { try { const j = await apiFetch("/api/admin?res=order&id=" + o.id, { credentials: "include" }).then((r) => r.json()); if (j.ok) setSelOrder(j.order); else toast(j.error || "Failed to open order"); } catch { toast("Network error"); } }} className={`cursor-pointer hover:bg-[#fff9ec] ${selOrder?.id === o.id ? "bg-[#fff4de]" : ""}`}>
-                            <td><b>{o.orderNumber}</b><br /><span className="text-xs text-stone-400">{new Date(o.createdAt).toLocaleDateString("en-IN")}</span></td>
-                            <td>{o.customerName}<br /><span className="text-xs text-stone-400">{o.customerPhone}</span></td>
-                            <td><b>{money(o.total)}</b></td>
-                            <td><span className={`pill text-[11px] ${o.paymentStatus === "paid" ? "bg-green-100 text-green-800" : o.paymentStatus === "failed" ? "bg-red-100 text-red-800" : o.paymentStatus === "refunded" ? "bg-purple-100 text-purple-800" : "bg-amber-100 text-amber-800"}`}>{o.paymentStatus}</span></td>
-                            <td><button onClick={async (e) => { e.stopPropagation(); if (!confirm("Delete order " + o.orderNumber + "? This cannot be undone.")) return; try { const r = await apiFetch("/api/orders/" + o.id, { method: "DELETE", credentials: "include" }); const j = await r.json(); if (r.ok && j.ok) { toast("Order deleted"); if (selOrder?.id === o.id) setSelOrder(null); load("orders"); } else toast(j.error || "Failed to delete"); } catch { toast("Network error"); } }} className="rounded-lg bg-red-50 p-1.5 text-red-700 hover:bg-red-100"><Trash2 size={13} /></button></td>
-                          </tr>
-                        ))}</tbody>
-                      </table>
-                    </div>
-                  );
-                });
-              })()}
-              {orders.length === 0 && <div className="card p-10 text-center text-sm text-stone-500">No orders found.</div>}
-            </div>
+            {/* ORDER LIST — grouped by status, collapsible */}
+            <OrderGroupList orders={orders} selOrder={selOrder} setSelOrder={setSelOrder} toast={toast} apiFetch={apiFetch} load={load} money={money} busy={busy} />
 
             {/* ORDER DETAIL PANEL */}
             <div className="card h-fit p-5 lg:sticky lg:top-24">
