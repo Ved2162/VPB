@@ -53,9 +53,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     await rateLimit('admin-write:' + me.id, 90, 60);
     const body = await readJson(req);
     if (body.trackingNumber !== undefined || body.courier !== undefined) throw new DeliveryError('Use Courier Shipments to update courier details with an audit trail');
-    if (Object.keys(body).some(key => !['orderStatus', 'paymentStatus'].includes(key))) throw new DeliveryError('Unsupported order field');
+    const ALLOWED = ['orderStatus', 'paymentStatus', 'customerName', 'customerPhone', 'customerEmail', 'shippingAddress', 'adminNotes'];
+    if (Object.keys(body).some(key => !ALLOWED.includes(key))) throw new DeliveryError('Unsupported order field');
     if (body.orderStatus !== undefined && !['placed', 'confirmed', 'packed', 'shipped', 'out_for_delivery', 'delivered', 'cancelled'].includes(body.orderStatus)) throw new DeliveryError('Invalid order status');
     if (body.paymentStatus !== undefined && !['pending', 'paid', 'failed', 'refunded'].includes(body.paymentStatus)) throw new DeliveryError('Invalid payment status');
+    if (body.customerName !== undefined && (typeof body.customerName !== 'string' || body.customerName.length > 120)) throw new DeliveryError('Invalid customer name');
+    if (body.customerPhone !== undefined && (typeof body.customerPhone !== 'string' || body.customerPhone.length > 20)) throw new DeliveryError('Invalid customer phone');
+    if (body.customerEmail !== undefined && (typeof body.customerEmail !== 'string' || body.customerEmail.length > 180)) throw new DeliveryError('Invalid customer email');
+    if (body.shippingAddress !== undefined && (typeof body.shippingAddress !== 'object' || Array.isArray(body.shippingAddress))) throw new DeliveryError('Invalid shipping address');
+    if (body.adminNotes !== undefined && (typeof body.adminNotes !== 'string' || body.adminNotes.length > 1000)) throw new DeliveryError('Admin notes too long');
     const [before] = await db.select().from(orders).where(eq(orders.id, id));
     if (!before) throw new DeliveryError('Order not found', 404);
     if ((before.razorpayOrderId || before.payuTxnId) && body.paymentStatus !== undefined && body.paymentStatus !== before.paymentStatus) throw new DeliveryError('Payment status is managed by the verified payment gateway', 409);
@@ -78,9 +84,37 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
         if ((order.razorpayOrderId || order.payuTxnId) && body.paymentStatus !== order.paymentStatus) throw new DeliveryError('Payment status is managed by the verified payment gateway', 409);
         patch.paymentStatus = body.paymentStatus;
       }
+      if (body.customerName !== undefined) patch.customerName = body.customerName;
+      if (body.customerPhone !== undefined) patch.customerPhone = body.customerPhone;
+      if (body.customerEmail !== undefined) patch.customerEmail = body.customerEmail;
+      if (body.shippingAddress !== undefined) patch.shippingAddress = body.shippingAddress;
+      if (body.adminNotes !== undefined) patch.paymentData = { ...(order.paymentData || {}), adminNotes: body.adminNotes };
       await tx.update(orders).set(patch).where(eq(orders.id, id));
       if (body.orderStatus === 'cancelled') await releaseStock(tx, id);
       await tx.insert(deliveryAudit).values({ actorId: me.id, resource: 'order', resourceId: id, changes: { operation: 'update', fields: Object.keys(body), outcome: 'success' } });
+      return NextResponse.json({ ok: true });
+    });
+  } catch (error) { return deliveryFailure(error); }
+}
+
+export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  try {
+    sameOrigin(req);
+    const me = await activeUser(req);
+    if (me.role !== 'admin') throw new DeliveryError('Admin only', 403);
+    const { id } = await params;
+    if (!isUUID(id)) throw new DeliveryError('Invalid order ID');
+    await rateLimit('admin-write:' + me.id, 90, 60);
+    return await db.transaction(async tx => {
+      const [actor] = await tx.select().from(users).where(eq(users.id, me.id)).for('share');
+      if (!actor?.active || actor.role !== 'admin' || actor.sessionVersion !== me.sessionVersion) throw new DeliveryError('Admin session expired', 401);
+      const [order] = await tx.select().from(orders).where(eq(orders.id, id)).for('update');
+      if (!order) throw new DeliveryError('Order not found', 404);
+      // Release any held stock before deleting
+      await releaseStock(tx, id);
+      // orderItems, shipments, shipmentHistory, orderNotifications, inventoryReservations cascade via FK onDelete
+      await tx.delete(orders).where(eq(orders.id, id));
+      await tx.insert(deliveryAudit).values({ actorId: me.id, resource: 'order', resourceId: id, changes: { operation: 'delete', orderNumber: order.orderNumber, outcome: 'success' } });
       return NextResponse.json({ ok: true });
     });
   } catch (error) { return deliveryFailure(error); }

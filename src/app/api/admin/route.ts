@@ -195,6 +195,12 @@ export async function DELETE(req: Request) {
     if (res === "product") [deleted] = await tx.delete(products).where(eq(products.id, id)).returning({ id: products.id });
     else if (res === "category") [deleted] = await tx.delete(categories).where(eq(categories.id, id)).returning({ id: categories.id });
     else if (res === "banner") [deleted] = await tx.delete(banners).where(eq(banners.id, id)).returning({ id: banners.id });
+    else if (res === "customer") {
+      const [target] = await tx.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, id));
+      if (!target) throw new DeliveryError('Customer not found', 404);
+      if (target.role === 'admin') throw new DeliveryError('Cannot delete an admin account');
+      [deleted] = await tx.delete(users).where(and(eq(users.id, id), ne(users.role, 'admin'))).returning({ id: users.id });
+    }
     else throw new DeliveryError('Unknown resource');
     if (!deleted) throw new DeliveryError('Record not found', 404);
     await tx.insert(deliveryAudit).values({ actorId: admin.id, resource: String(res), resourceId: id, changes: { operation: 'delete', outcome: 'success' } });

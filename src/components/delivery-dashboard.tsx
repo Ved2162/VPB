@@ -9,7 +9,7 @@ import DeliveryEditor from './delivery-editor';
 import { deliveryRequest, type Settings, type ShipmentRow } from './delivery-types';
 
 type Result = { rows: ShipmentRow[]; total: number; summary: { status: string; count: number }[] };
-const initialFilters = { q: '', status: '', provider: '', payment: '', from: '', to: '', sort: 'date', direction: 'desc' };
+const initialFilters = { q: '', status: '', provider: '', payment: 'paid', from: '', to: '', sort: 'date', direction: 'desc' };
 function Badge({ status }: { status: string }) {
   return <span className={`inline-block rounded-full px-2.5 py-1 text-[11px] font-bold ${status === 'DELIVERED' ? 'bg-emerald-100 text-emerald-800' : ['DELIVERY_FAILED', 'RETURN_TO_ORIGIN', 'CANCELLED'].includes(status) ? 'bg-red-50 text-red-800' : 'bg-[#f6ead2] text-[#7a5b1e]'}`}>{statusLabel(status)}</span>;
 }
@@ -45,7 +45,7 @@ export default function DeliveryDashboard() {
   return <main className="mx-auto max-w-[1600px] px-4 py-8 sm:px-6">
     <header className="flex flex-wrap items-center justify-between gap-4"><div><p className="flex items-center gap-2 text-xs font-bold uppercase tracking-[.22em] text-[#7a1f1f]"><Truck size={17} />VPB Operations</p><h1 className="mt-2 font-serif text-3xl font-bold sm:text-4xl">Courier Shipments</h1><p className="mt-2 text-sm text-stone-500">{settings?.me.allOrders ? 'All orders' : 'Your assigned orders'} · Manual courier updates</p></div><div className="flex flex-wrap gap-2"><button onClick={reload} disabled={busy} className="btn-ghost" aria-label="Refresh shipments"><RefreshCw size={16} /></button><button className="btn-ghost" onClick={async () => { await logout(); router.replace('/delivery/login'); }}><LogOut size={16} />Sign out</button></div></header>
     <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5" aria-label="Shipment summary">{[
-      ['To assign', count('NOT_ASSIGNED')], ['Pending pickup', count('ASSIGNED', 'PICKUP_PENDING')], ['On the way', count('PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY')], ['Delivery failed', count('DELIVERY_FAILED')], ['Returns', count('RETURN_TO_ORIGIN')],
+      ['To assign (paid)', count('NOT_ASSIGNED')], ['Pending pickup', count('ASSIGNED', 'PICKUP_PENDING')], ['On the way', count('PICKED_UP', 'IN_TRANSIT', 'OUT_FOR_DELIVERY')], ['Delivery failed', count('DELIVERY_FAILED')], ['Returns', count('RETURN_TO_ORIGIN')],
     ].map(([title, value]) => <div className="card p-4 sm:p-5" key={title}><p className="text-xs font-semibold text-stone-500">{title}</p><p className="mt-2 font-serif text-3xl font-bold text-[#7a1f1f]">{result ? value : '—'}</p></div>)}</section>
 
     {message && <p role="status" className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">{message}</p>}

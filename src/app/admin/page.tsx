@@ -220,48 +220,119 @@ export default function Admin() {
 
       {tab === "orders" && (!dataBusy || loaded[tab]) && (
         <div className="mt-6">
-          <div className="flex gap-2"><input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Search order no, name, phone…" className="input !w-72" /><button onClick={() => load()} className="btn-ghost !py-2 text-[13px]">Search</button></div>
-          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_380px]">
-            <div className="card overflow-x-auto">
-              <table className="admin-table min-w-[640px]">
-                <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Status</th></tr></thead>
-                <tbody>{orders.map((o) => (
-                  <tr key={o.id} onClick={async () => { try { const j = await apiFetch("/api/admin?res=order&id=" + o.id, { credentials: "include" }).then((r) => r.json()); if (j.ok) setSelOrder(j.order); else toast(j.error || "Failed to open order"); } catch { toast("Network error"); } }} className="cursor-pointer hover:bg-[#fff9ec]">
-                    <td><b>{o.orderNumber}</b><br /><span className="text-xs text-stone-400">{new Date(o.createdAt).toLocaleDateString("en-IN")}</span></td>
-                    <td>{o.customerName}<br /><span className="text-xs text-stone-400">{o.customerPhone}</span></td>
-                    <td><b>{money(o.total)}</b><br /><span className="text-xs text-stone-400">{o.paymentStatus}</span></td>
-                    <td><span className="pill bg-[#fff4de] text-[#7a5b1e]">{o.orderStatus}</span></td>
-                  </tr>
-                ))}</tbody>
-              </table>
+          <div className="flex flex-wrap gap-2">
+            <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Search order no, name, phone…" className="input !w-72" />
+            <button onClick={() => load()} className="btn-ghost !py-2 text-[13px]">Search</button>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_420px]">
+            {/* ORDER LIST — grouped by status */}
+            <div className="space-y-6">
+              {(() => {
+                const statusConfig: Record<string, { label: string; pill: string; headerBg: string }> = {
+                  confirmed: { label: "✅ Confirmed — Ready to fulfil", pill: "bg-green-100 text-green-800", headerBg: "bg-green-50 border-green-200" },
+                  packed:    { label: "📦 Packed", pill: "bg-blue-100 text-blue-800", headerBg: "bg-blue-50 border-blue-200" },
+                  shipped:   { label: "🚚 Shipped", pill: "bg-indigo-100 text-indigo-800", headerBg: "bg-indigo-50 border-indigo-200" },
+                  out_for_delivery: { label: "🛵 Out for Delivery", pill: "bg-cyan-100 text-cyan-800", headerBg: "bg-cyan-50 border-cyan-200" },
+                  delivered: { label: "✔ Delivered", pill: "bg-emerald-100 text-emerald-800", headerBg: "bg-emerald-50 border-emerald-200" },
+                  placed:    { label: "🕐 Placed — Awaiting payment", pill: "bg-amber-100 text-amber-800", headerBg: "bg-amber-50 border-amber-200" },
+                  cancelled: { label: "✖ Cancelled", pill: "bg-red-100 text-red-800", headerBg: "bg-red-50 border-red-200" },
+                };
+                const order_of_groups = ["confirmed", "packed", "shipped", "out_for_delivery", "delivered", "placed", "cancelled"];
+                const grouped: Record<string, any[]> = {};
+                for (const o of orders) {
+                  const k = o.orderStatus || "placed";
+                  if (!grouped[k]) grouped[k] = [];
+                  grouped[k].push(o);
+                }
+                return order_of_groups.map(status => {
+                  const group = grouped[status];
+                  if (!group?.length) return null;
+                  const cfg = statusConfig[status] || { label: status, pill: "bg-stone-100 text-stone-700", headerBg: "bg-stone-50 border-stone-200" };
+                  return (
+                    <div key={status} className="card overflow-hidden">
+                      <div className={`border-b px-4 py-2.5 text-[13px] font-bold ${cfg.headerBg}`}>{cfg.label} <span className="ml-1 rounded-full bg-white/70 px-2 py-0.5 text-xs">{group.length}</span></div>
+                      <table className="admin-table min-w-[560px]">
+                        <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th></th></tr></thead>
+                        <tbody>{group.map((o) => (
+                          <tr key={o.id} onClick={async () => { try { const j = await apiFetch("/api/admin?res=order&id=" + o.id, { credentials: "include" }).then((r) => r.json()); if (j.ok) setSelOrder(j.order); else toast(j.error || "Failed to open order"); } catch { toast("Network error"); } }} className={`cursor-pointer hover:bg-[#fff9ec] ${selOrder?.id === o.id ? "bg-[#fff4de]" : ""}`}>
+                            <td><b>{o.orderNumber}</b><br /><span className="text-xs text-stone-400">{new Date(o.createdAt).toLocaleDateString("en-IN")}</span></td>
+                            <td>{o.customerName}<br /><span className="text-xs text-stone-400">{o.customerPhone}</span></td>
+                            <td><b>{money(o.total)}</b></td>
+                            <td><span className={`pill text-[11px] ${o.paymentStatus === "paid" ? "bg-green-100 text-green-800" : o.paymentStatus === "failed" ? "bg-red-100 text-red-800" : o.paymentStatus === "refunded" ? "bg-purple-100 text-purple-800" : "bg-amber-100 text-amber-800"}`}>{o.paymentStatus}</span></td>
+                            <td><button onClick={async (e) => { e.stopPropagation(); if (!confirm("Delete order " + o.orderNumber + "? This cannot be undone.")) return; try { const r = await apiFetch("/api/orders/" + o.id, { method: "DELETE", credentials: "include" }); const j = await r.json(); if (r.ok && j.ok) { toast("Order deleted"); if (selOrder?.id === o.id) setSelOrder(null); load("orders"); } else toast(j.error || "Failed to delete"); } catch { toast("Network error"); } }} className="rounded-lg bg-red-50 p-1.5 text-red-700 hover:bg-red-100"><Trash2 size={13} /></button></td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                  );
+                });
+              })()}
+              {orders.length === 0 && <div className="card p-10 text-center text-sm text-stone-500">No orders found.</div>}
             </div>
+
+            {/* ORDER DETAIL PANEL */}
             <div className="card h-fit p-5 lg:sticky lg:top-24">
-              {!selOrder ? <p className="text-sm text-stone-500">Select an order to manage status, courier & tracking.</p> : (
-                <div>
-                  <p className="font-serif text-lg font-bold">{selOrder.orderNumber}</p>
-                  {['paid', 'refunded'].includes(selOrder.paymentStatus) && <InvoiceActions key={selOrder.id} orderId={selOrder.id} admin />}
-                  <p className="text-xs text-stone-500">{selOrder.customerName} • {selOrder.customerEmail} • {selOrder.customerPhone}</p>
-                  <p className="mt-1 text-xs">{(selOrder.shippingAddress as any)?.addressLine}, {(selOrder.shippingAddress as any)?.city} — {(selOrder.shippingAddress as any)?.pincode}</p>
-                  <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
-                    <span className={`pill ${selOrder.paymentStatus === "paid" ? "bg-green-100 text-green-800" : selOrder.paymentStatus === "failed" ? "bg-red-100 text-red-800" : selOrder.paymentStatus === "refunded" ? "bg-purple-100 text-purple-800" : "bg-amber-100 text-amber-800"}`}>Payment: {selOrder.paymentStatus}</span>
-                    {selOrder.payuTxnId && <span className="pill bg-stone-100 font-mono text-stone-600">PayU txn: {selOrder.payuTxnId}</span>}
-                    {selOrder.payuPaymentId && <span className="pill bg-stone-100 font-mono text-stone-600">PayU payment: {selOrder.payuPaymentId}</span>}
-                    {selOrder.razorpayOrderId && <span className="pill bg-stone-100 font-mono text-stone-600">Historical order: {selOrder.razorpayOrderId}</span>}
-                    {selOrder.razorpayPaymentId && <span className="pill bg-stone-100 font-mono text-stone-600">Historical payment: {selOrder.razorpayPaymentId}</span>}
-                    {selOrder.razorpayWebhookVerified && <span className="pill bg-emerald-50 text-emerald-800">Historical verification recorded</span>}
+              {!selOrder ? <p className="text-sm text-stone-500">Select an order to edit, update status, or delete.</p> : (
+                <div className="space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-serif text-lg font-bold">{selOrder.orderNumber}</p>
+                    <button onClick={async () => { if (!confirm("Delete order " + selOrder.orderNumber + "? This cannot be undone.")) return; try { const r = await apiFetch("/api/orders/" + selOrder.id, { method: "DELETE", credentials: "include" }); const j = await r.json(); if (r.ok && j.ok) { toast("Order deleted"); setSelOrder(null); load("orders"); } else toast(j.error || "Failed"); } catch { toast("Network error"); } }} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 shrink-0">Delete Order</button>
                   </div>
-                  <div className="mt-2 space-y-1.5 text-sm">{(selOrder.items || []).map((it: any) => (<div key={it.id} className="flex justify-between"><span>{it.productName} × {it.quantity}</span><b>{money(it.price * it.quantity)}</b></div>))}</div>
-                  {selOrder.paymentData?.stockReviewRequired && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900">Stock review required. Update inventory, choose confirmed, then save to allocate stock and release this order.</p>}
-                  <p className="label mt-4">Order Status</p>
+                  {['paid', 'refunded'].includes(selOrder.paymentStatus) && <InvoiceActions key={selOrder.id} orderId={selOrder.id} admin />}
+
+                  {/* Payment badges */}
+                  <div className="flex flex-wrap gap-1.5 text-[11px]">
+                    <span className={`pill ${selOrder.paymentStatus === "paid" ? "bg-green-100 text-green-800" : selOrder.paymentStatus === "failed" ? "bg-red-100 text-red-800" : selOrder.paymentStatus === "refunded" ? "bg-purple-100 text-purple-800" : "bg-amber-100 text-amber-800"}`}>Payment: {selOrder.paymentStatus}</span>
+                    {selOrder.payuTxnId && <span className="pill bg-stone-100 font-mono text-stone-600">PayU: {selOrder.payuTxnId}</span>}
+                  </div>
+
+                  {/* Items */}
+                  <div className="rounded-xl bg-[#fdf6e7] p-3 space-y-1.5 text-sm">{(selOrder.items || []).map((it: any) => (<div key={it.id} className="flex justify-between"><span>{it.productName} × {it.quantity}</span><b>{money(it.price * it.quantity)}</b></div>))}<div className="mt-2 flex justify-between border-t border-[#ecdcb9] pt-2 font-bold"><span>Total</span><span>{money(selOrder.total)}</span></div></div>
+
+                  {selOrder.paymentData?.stockReviewRequired && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">⚠ Stock review required — set status to Confirmed to allocate.</p>}
+
+                  {/* Editable fields */}
+                  <p className="label">Customer Name</p>
+                  <input value={selOrder.customerName || ""} onChange={(e) => setSelOrder({ ...selOrder, customerName: e.target.value })} className="input" />
+
+                  <p className="label mt-2">Customer Phone</p>
+                  <input value={selOrder.customerPhone || ""} onChange={(e) => setSelOrder({ ...selOrder, customerPhone: e.target.value })} className="input" />
+
+                  <p className="label mt-2">Customer Email</p>
+                  <input value={selOrder.customerEmail || ""} onChange={(e) => setSelOrder({ ...selOrder, customerEmail: e.target.value })} className="input" />
+
+                  <p className="label mt-2">Shipping Address Line</p>
+                  <input value={(selOrder.shippingAddress as any)?.addressLine || ""} onChange={(e) => setSelOrder({ ...selOrder, shippingAddress: { ...(selOrder.shippingAddress || {}), addressLine: e.target.value } })} className="input" />
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p className="label mt-2">City</p>
+                      <input value={(selOrder.shippingAddress as any)?.city || ""} onChange={(e) => setSelOrder({ ...selOrder, shippingAddress: { ...(selOrder.shippingAddress || {}), city: e.target.value } })} className="input" />
+                    </div>
+                    <div>
+                      <p className="label mt-2">Pincode</p>
+                      <input value={(selOrder.shippingAddress as any)?.pincode || ""} onChange={(e) => setSelOrder({ ...selOrder, shippingAddress: { ...(selOrder.shippingAddress || {}), pincode: e.target.value } })} className="input" />
+                    </div>
+                  </div>
+
+                  <p className="label mt-2">Order Status</p>
                   <select value={selOrder.orderStatus} onChange={(e) => setSelOrder({ ...selOrder, orderStatus: e.target.value })} className="input">
-                    {["placed", "confirmed", "packed", "shipped", "out_for_delivery", "delivered", "cancelled"].map((s) => (<option key={s} value={s}>{s}</option>))}
+                    {["placed", "confirmed", "packed", "shipped", "out_for_delivery", "delivered", "cancelled"].map((s) => (<option key={s} value={s}>{s.replace(/_/g, " ")}</option>))}
                   </select>
-                  <p className="label mt-3">Payment Status</p>
+
+                  <p className="label mt-2">Payment Status</p>
                   <select value={selOrder.paymentStatus} onChange={(e) => setSelOrder({ ...selOrder, paymentStatus: e.target.value })} className="input">
                     {["pending", "paid", "failed", "refunded"].map((s) => (<option key={s} value={s}>{s}</option>))}
                   </select>
-                  <Link href="/admin/delivery" className="mt-3 block text-sm font-bold text-[#7a1f1f] underline">Manage delivery staff & courier providers</Link>
-                  <button disabled={busy} onClick={() => updateOrder({ orderStatus: selOrder.orderStatus, paymentStatus: selOrder.paymentStatus })} className="btn-primary mt-4 w-full">Save Changes</button>
+
+                  <p className="label mt-2">Admin Notes</p>
+                  <textarea value={selOrder.paymentData?.adminNotes || ""} onChange={(e) => setSelOrder({ ...selOrder, paymentData: { ...(selOrder.paymentData || {}), adminNotes: e.target.value } })} className="input min-h-[72px]" placeholder="Internal notes (not shown to customer)" />
+
+                  <div className="flex gap-2 pt-1">
+                    <button disabled={busy} onClick={() => updateOrder({ orderStatus: selOrder.orderStatus, paymentStatus: selOrder.paymentStatus, customerName: selOrder.customerName, customerPhone: selOrder.customerPhone, customerEmail: selOrder.customerEmail, shippingAddress: selOrder.shippingAddress, adminNotes: selOrder.paymentData?.adminNotes || "" })} className="btn-primary flex-1">Save Changes</button>
+                    <button onClick={() => setSelOrder(null)} className="btn-ghost !px-3">✕</button>
+                  </div>
+                  <Link href="/admin/delivery" className="block text-center text-xs font-bold text-[#7a1f1f] underline">Manage delivery staff & couriers →</Link>
                 </div>
               )}
             </div>
@@ -274,13 +345,16 @@ export default function Admin() {
           <div className="flex gap-2"><input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Search customers…" className="input !w-64" /><button onClick={() => load()} className="btn-ghost !py-2 text-[13px]">Search</button></div>
           <div className="card mt-4 overflow-x-auto">
             <table className="admin-table min-w-[720px]">
-              <thead><tr><th>Customer</th><th>Orders</th><th>Spent</th><th>Status</th><th>Action</th></tr></thead>
+              <thead><tr><th>Customer</th><th>Orders</th><th>Spent</th><th>Status</th><th>Actions</th></tr></thead>
               <tbody>{customers.map((c: any) => (
                 <tr key={c.id}>
                   <td><b>{c.name}</b><br /><span className="text-xs text-stone-400">{c.email} • {c.phone} • {c.role}</span></td>
                   <td>{c.orders}</td><td><b>{money(c.spent)}</b></td>
                   <td><span className={`pill ${c.active ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>{c.active ? "Active" : "Disabled"}</span></td>
-                  <td>{c.role !== "admin" && <button onClick={async () => { await changeRecord("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "customer-toggle", id: c.id, active: !c.active }) }, "Updated"); }} className="rounded-lg bg-[#f3e6cc] px-3 py-1.5 text-xs font-bold">{c.active ? "Disable" : "Enable"}</button>}</td>
+                  <td>{c.role !== "admin" && <span className="flex gap-1.5">
+                    <button onClick={async () => { await changeRecord("/api/admin", { method: "POST", headers: { "Content-Type": "application/json" }, credentials: "include", body: JSON.stringify({ res: "customer-toggle", id: c.id, active: !c.active }) }, "Updated"); }} className="rounded-lg bg-[#f3e6cc] px-3 py-1.5 text-xs font-bold">{c.active ? "Disable" : "Enable"}</button>
+                    <button onClick={async () => { if (!confirm("Delete customer " + c.name + " and all their data? This cannot be undone.")) return; await changeRecord("/api/admin?res=customer&id=" + c.id, { method: "DELETE", credentials: "include" }, "Customer deleted"); }} className="rounded-lg bg-red-50 p-2 text-red-700 hover:bg-red-100"><Trash2 size={13} /></button>
+                  </span>}</td>
                 </tr>
               ))}</tbody>
             </table>
