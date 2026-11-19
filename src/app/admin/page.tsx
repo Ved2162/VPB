@@ -87,7 +87,7 @@ function OrderGroupList({ orders, selOrder, setSelOrder, toast, apiFetch, load, 
             {isOpen && (
               <div className="overflow-x-auto">
                 <table className="admin-table min-w-[560px]">
-                  <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th><th></th></tr></thead>
+                  <thead><tr><th>Order</th><th>Customer</th><th>Total</th><th>Payment</th></tr></thead>
                   <tbody>{group.map((o) => (
                     <tr key={o.id}
                       onClick={async () => {
@@ -102,21 +102,6 @@ function OrderGroupList({ orders, selOrder, setSelOrder, toast, apiFetch, load, 
                       <td>{o.customerName}<br /><span className="text-xs text-stone-400">{o.customerPhone}</span></td>
                       <td><b>{money(o.total)}</b></td>
                       <td><span className={`pill text-[11px] ${o.paymentStatus === "paid" ? "bg-green-100 text-green-800" : o.paymentStatus === "failed" ? "bg-red-100 text-red-800" : o.paymentStatus === "refunded" ? "bg-purple-100 text-purple-800" : "bg-amber-100 text-amber-800"}`}>{o.paymentStatus}</span></td>
-                      <td>
-                        <button
-                          onClick={async (e) => {
-                            e.stopPropagation();
-                            if (!confirm("Delete order " + o.orderNumber + "? This cannot be undone.")) return;
-                            try {
-                              const r = await apiFetch("/api/orders/" + o.id, { method: "DELETE", credentials: "include" });
-                              const j = await r.json();
-                              if (r.ok && j.ok) { toast("Order deleted"); if (selOrder?.id === o.id) setSelOrder(null); load("orders"); }
-                              else toast("Unable to delete order. Please retry.");
-                            } catch { toast("Network error"); }
-                          }}
-                          className="rounded-lg bg-red-50 p-1.5 text-red-700 hover:bg-red-100"
-                        ><Trash2 size={13} /></button>
-                      </td>
                     </tr>
                   ))}</tbody>
                 </table>
@@ -372,7 +357,7 @@ export default function Admin() {
                 <div className="space-y-3">
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-serif text-lg font-bold">{selOrder.orderNumber}</p>
-                    <button onClick={async () => { if (!confirm("Delete order " + selOrder.orderNumber + "? This cannot be undone.")) return; try { const r = await apiFetch("/api/orders/" + selOrder.id, { method: "DELETE", credentials: "include" }); const j = await r.json(); if (r.ok && j.ok) { toast("Order deleted"); setSelOrder(null); load("orders"); } else toast(j.error || "Failed"); } catch { toast("Network error"); } }} className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 hover:bg-red-100 shrink-0">Delete Order</button>
+                    <button onClick={() => setSelOrder(null)} className="rounded-lg bg-stone-100 p-1.5 text-stone-500 hover:bg-stone-200">✕</button>
                   </div>
                   {['paid', 'refunded'].includes(selOrder.paymentStatus) && <InvoiceActions key={selOrder.id} orderId={selOrder.id} admin />}
 
@@ -425,8 +410,7 @@ export default function Admin() {
                   <textarea value={selOrder.paymentData?.adminNotes || ""} onChange={(e) => setSelOrder({ ...selOrder, paymentData: { ...(selOrder.paymentData || {}), adminNotes: e.target.value } })} className="input min-h-[72px]" placeholder="Internal notes (not shown to customer)" />
 
                   <div className="flex gap-2 pt-1">
-                    <button disabled={busy} onClick={() => updateOrder({ orderStatus: selOrder.orderStatus, paymentStatus: selOrder.paymentStatus, customerName: selOrder.customerName, customerPhone: selOrder.customerPhone, customerEmail: selOrder.customerEmail, shippingAddress: selOrder.shippingAddress, adminNotes: selOrder.paymentData?.adminNotes || "" })} className="btn-primary flex-1">Save Changes</button>
-                    <button onClick={() => setSelOrder(null)} className="btn-ghost !px-3">✕</button>
+                    <button disabled={busy} onClick={() => updateOrder({ orderStatus: selOrder.orderStatus, paymentStatus: selOrder.paymentStatus, customerName: selOrder.customerName, customerPhone: selOrder.customerPhone, customerEmail: selOrder.customerEmail, shippingAddress: selOrder.shippingAddress, adminNotes: selOrder.paymentData?.adminNotes || "" })} className="btn-primary w-full">Save Changes</button>
                   </div>
                   <Link href="/admin/delivery" className="block text-center text-xs font-bold text-[#7a1f1f] underline">Manage delivery staff & couriers →</Link>
                 </div>
