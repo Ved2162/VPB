@@ -32,8 +32,16 @@ export async function POST(req: Request) {
         return NextResponse.json(retiredSandboxResult(previous.id), { status: 409 });
     }
     if (previous.payuTxnId && !['paid', 'refunded'].includes(previous.paymentStatus)) {
-      // Unknown/unavailable verification must never produce another attempt.
-      await reconcilePayu(previous.payuTxnId);
+      // Reconcile the previous PayU attempt before allowing a retry.
+      // DeliveryErrors (environment mismatch, Not Found, etc.) must propagate — they are
+      // security signals. Only network/timeout errors are wrapped into a 503 so the
+      // customer sees "PayU temporarily unavailable" instead of a generic 500.
+      try {
+        await reconcilePayu(previous.payuTxnId);
+      } catch (reconcileError) {
+        if (reconcileError instanceof DeliveryError) throw reconcileError;
+        throw new DeliveryError('PayU is temporarily unavailable. Please try again in a moment.', 503);
+      }
     }
     return await db.transaction(async tx => {
     const [account] = await tx.select().from(users).where(eq(users.id, me.id)).for('update');

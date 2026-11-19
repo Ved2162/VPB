@@ -157,7 +157,9 @@ export default function CheckoutPage() {
       setPaymentFailed(confirmation.paymentStatus === 'failed');
       if (confirmation.paymentStatus !== 'paid') {
         setVerificationPaused(false);
-        setErr(confirmation.paymentStatus === 'failed' ? 'Payment failed or was cancelled. You can retry the same order.' : 'PayU has not confirmed a final payment result yet. If a PayU page is open, complete or cancel there. Otherwise check status again shortly. A new attempt is available only after PayU confirms this one has ended. If it stays pending, contact support with order ' + (result.order.orderNumber || orderId) + '.');
+        setErr(confirmation.paymentStatus === 'failed'
+          ? 'Payment failed or was cancelled. Use the button below to retry on the same order.'
+          : 'PayU has not confirmed a final result yet. If the PayU page is still open, complete or cancel it there. Otherwise tap \'Check payment status\' in a minute — your order is saved. Order: ' + (result.order?.orderNumber || orderId));
         return;
       }
       setPendingReceipt(null); setStep(4); clear();
@@ -222,7 +224,15 @@ export default function CheckoutPage() {
         }
         return;
       }
-      if (result.alreadyPaid || result.needsVerification) { await verifyReceipt(result.orderId); return; }
+      if (result.alreadyPaid) { await verifyReceipt(result.orderId); return; }
+      if (result.needsVerification) {
+        // A previous PayU attempt is still pending — do not auto-verify (can show confusing errors).
+        // Store the order and let the customer check status manually.
+        sessionStorage.setItem('vpb-payu-order', result.orderId);
+        setPendingReceipt(result.orderId); setPaymentFailed(false); setStep(3);
+        pollCount.current = 0; setVerificationPaused(false);
+        return;
+      }
       if (!['https://test.payu.in/_payment', 'https://secure.payu.in/_payment'].includes(result.action)) throw new Error('Invalid checkout destination');
       sessionStorage.setItem('vpb-payu-order', result.orderId);
       setPendingReceipt(result.orderId); setPaymentFailed(false);
