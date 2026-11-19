@@ -15,10 +15,11 @@ import { SafeImg } from "@/components/site";
 import { ProductImagePicker } from '@/components/product-image-picker';
 
 // Collapsible order group component — open by default for active statuses, collapsed for placed/cancelled
-function OrderGroupList({ orders, selOrder, setSelOrder, toast, apiFetch, load, money, busy }: {
+function OrderGroupList({ orders, selOrder, setSelOrder, toast, apiFetch, load, money, busy, statusFilter }: {
   orders: any[]; selOrder: any; setSelOrder: (o: any) => void;
   toast: (m: string) => void; apiFetch: typeof import('@/lib/api-client').apiFetch;
   load: (t?: string) => void; money: (n: number) => string; busy: boolean;
+  statusFilter: string;
 }) {
   const STATUS_CONFIG: Record<string, { label: string; pill: string; headerBg: string; defaultOpen: boolean }> = {
     confirmed:        { label: "✅ Confirmed — Ready to fulfil", pill: "bg-green-100 text-green-800",   headerBg: "bg-green-50 border-green-200",   defaultOpen: true  },
@@ -38,6 +39,17 @@ function OrderGroupList({ orders, selOrder, setSelOrder, toast, apiFetch, load, 
     grouped[k].push(o);
   }
 
+  // Apply quick filter — "confirmed" maps to active fulfilment statuses,
+  // "pending" maps to placed (awaiting payment), "cancelled" maps to cancelled
+  const FILTER_MAP: Record<string, string[]> = {
+    confirmed: ["confirmed", "packed", "shipped", "out_for_delivery", "delivered"],
+    pending:   ["placed"],
+    cancelled: ["cancelled"],
+  };
+  const visibleStatuses = statusFilter && FILTER_MAP[statusFilter]
+    ? FILTER_MAP[statusFilter]
+    : ORDER_OF_GROUPS;
+
   const initialOpen: Record<string, boolean> = {};
   for (const status of ORDER_OF_GROUPS) {
     initialOpen[status] = STATUS_CONFIG[status]?.defaultOpen ?? true;
@@ -46,7 +58,7 @@ function OrderGroupList({ orders, selOrder, setSelOrder, toast, apiFetch, load, 
 
   const toggle = (status: string) => setOpen(prev => ({ ...prev, [status]: !prev[status] }));
 
-  const groups = ORDER_OF_GROUPS.filter(s => grouped[s]?.length);
+  const groups = visibleStatuses.filter(s => grouped[s]?.length);
 
   if (!groups.length) return <div className="card p-10 text-center text-sm text-stone-500">No orders found.</div>;
 
@@ -136,6 +148,7 @@ export default function Admin() {
   const [editC, setEditC] = useState<any>(null);
   const [selOrder, setSelOrder] = useState<any>(null);
   const [busy, setBusy] = useState(false);
+  const [orderStatusFilter, setOrderStatusFilter] = useState("");
   const [uploadingImages, setUploadingImages] = useState(false);
   const [loadError, setLoadError] = useState("");
   const dataBusy = useApiActivity("/api/admin");
@@ -323,13 +336,35 @@ export default function Admin() {
 
       {tab === "orders" && (!dataBusy || loaded[tab]) && (
         <div className="mt-6">
-          <div className="flex flex-wrap gap-2">
+          {/* Search + quick-filter bar */}
+          <div className="flex flex-wrap items-center gap-2">
             <input value={q} onChange={(e) => setQ(e.target.value)} onKeyDown={(e) => e.key === "Enter" && load()} placeholder="Search order no, name, phone…" className="input !w-72" />
             <button onClick={() => load()} className="btn-ghost !py-2 text-[13px]">Search</button>
+            <div className="ml-auto flex gap-1.5">
+              {([
+                ["", "All", "bg-[#1c0f0a] text-[#f0d9a8]", "bg-white ring-1 ring-[#e7d6b8]"],
+                ["confirmed", "Confirmed", "bg-green-700 text-white", "bg-green-50 text-green-800 ring-1 ring-green-200"],
+                ["pending", "Pending", "bg-amber-500 text-white", "bg-amber-50 text-amber-800 ring-1 ring-amber-200"],
+                ["cancelled", "Cancelled", "bg-red-700 text-white", "bg-red-50 text-red-800 ring-1 ring-red-200"],
+              ] as [string, string, string, string][]).map(([filter, label, activeClass, inactiveClass]) => {
+                const count = filter === ""
+                  ? orders.length
+                  : filter === "confirmed"
+                    ? orders.filter(o => ["confirmed","packed","shipped","out_for_delivery","delivered"].includes(o.orderStatus)).length
+                    : orders.filter(o => (filter === "pending" ? o.orderStatus === "placed" : o.orderStatus === filter)).length;
+                const active = orderStatusFilter === filter;
+                return (
+                  <button key={filter} onClick={() => setOrderStatusFilter(filter)} className={`flex shrink-0 items-center gap-1.5 rounded-full px-3.5 py-2 text-[12px] font-bold transition-all ${active ? activeClass : inactiveClass}`}>
+                    {label}
+                    <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-black ${active ? "bg-white/20" : "bg-black/8"}`}>{count}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_420px]">
             {/* ORDER LIST — grouped by status, collapsible */}
-            <OrderGroupList orders={orders} selOrder={selOrder} setSelOrder={setSelOrder} toast={toast} apiFetch={apiFetch} load={load} money={money} busy={busy} />
+            <OrderGroupList orders={orders} selOrder={selOrder} setSelOrder={setSelOrder} toast={toast} apiFetch={apiFetch} load={load} money={money} busy={busy} statusFilter={orderStatusFilter} />
 
             {/* ORDER DETAIL PANEL */}
             <div className="card h-fit p-5 lg:sticky lg:top-24">
