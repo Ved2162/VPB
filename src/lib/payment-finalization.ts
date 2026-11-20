@@ -44,10 +44,15 @@ export async function finalizePayment(confirmation: Confirmation) {
         productName: item.name || 'Cotton manjha', productImage: item.image || null, quantity: item.qty, price: item.price! });
     }
     await releaseStock(tx, order.id);
-    const [paid] = await tx.update(orders).set({ paymentStatus: 'paid',
+    const [paid] = await tx.update(orders).set({ 
+      paymentStatus: 'paid',
       orderStatus: order.orderStatus === 'cancelled' ? 'cancelled' : stockReviewRequired ? 'placed' : 'confirmed',
-      ...(payu ? { payuTxnId: confirmation.orderId, payuPaymentId: confirmation.paymentId } : {}), paidAt: order.paidAt || new Date(), paymentMethod: confirmation.method || order.paymentMethod,
-      paymentData: sql`coalesce(${orders.paymentData}, '{}'::jsonb) || ${JSON.stringify({ capturedAmount: confirmation.amount / 100, stockReviewRequired, verifiedAt: new Date().toISOString() })}::jsonb`, updatedAt: new Date(),
+      ...(payu ? { payuTxnId: confirmation.orderId, payuPaymentId: confirmation.paymentId } : {}), 
+      paidAt: order.paidAt || new Date(), 
+      paymentMethod: confirmation.method || order.paymentMethod,
+      checkoutLockedAt: null, // Clear checkout lock on successful payment
+      paymentData: sql`coalesce(${orders.paymentData}, '{}'::jsonb) || ${JSON.stringify({ capturedAmount: confirmation.amount / 100, stockReviewRequired, verifiedAt: new Date().toISOString() })}::jsonb`, 
+      updatedAt: new Date(),
     }).where(eq(orders.id, order.id)).returning();
     if (!stockReviewRequired && paid.orderStatus !== 'cancelled') await tx.insert(orderNotifications).values({ orderId: paid.id }).onConflictDoNothing();
     if (confirmation.reconciledBy) await tx.insert(deliveryAudit).values({ actorId: confirmation.reconciledBy, resource: 'order', resourceId: order.id, changes: { operation: 'stock_reconciled', outcome: 'success' } });

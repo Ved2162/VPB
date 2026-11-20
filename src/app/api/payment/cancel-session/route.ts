@@ -146,6 +146,11 @@ export async function POST(req: Request) {
       if (updatedOrder.paymentStatus === 'failed') {
         payuLog('cancel_session_confirmed_failed', { orderId: updatedOrder.id, txnid: result.attempt.txnId });
         // Stock already released by reconcilePayu
+        // Clear checkout lock explicitly
+        await db.update(orders)
+          .set({ checkoutLockedAt: null, updatedAt: new Date() })
+          .where(eq(orders.id, updatedOrder.id));
+        
         return NextResponse.json({
           ok: true,
           status: 'verified_failed',

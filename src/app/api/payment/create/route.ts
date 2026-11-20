@@ -4,7 +4,7 @@ import { readJson, canonicalJson, isUuid } from '@/lib/http-security';
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { orders, products, users, payuAttempts } from "@/db/schema";
-import { and, eq, inArray, or, sql, count } from "drizzle-orm";
+import { and, eq, inArray, or, sql, isNotNull } from "drizzle-orm";
 import { orderNumber } from "@/lib/auth";
 import { payuConfig, paymentEmail } from '@/lib/payu';
 import { preparePayuCheckout, isRetiredSandboxAttempt, retiredSandboxResult } from '@/lib/payu-payments';
@@ -45,6 +45,20 @@ export async function POST(req: Request) {
     const [account] = await tx.select({ active: users.active, email: users.email, role: users.role, sessionVersion: users.sessionVersion }).from(users).where(eq(users.id, me.id)).for('update');
     if (account && account.sessionVersion !== me.sessionVersion) throw new DeliveryError('Session expired. Please log in again', 401);
     if (!account?.active || account.role === 'delivery') throw new DeliveryError('Account unavailable', 403);
+    
+    // Check for existing locked checkout - prevent concurrent payment attempts
+    const existingLocked = await tx.select({ id: orders.id, orderNumber: orders.orderNumber, checkoutLockedAt: orders.checkoutLockedAt })
+      .from(orders)
+      .where(and(eq(orders.userId, me.id), inArray(orders.paymentStatus, ['pending', 'failed']), isNotNull(orders.checkoutLockedAt)))
+      .limit(1);
+    
+    if (existingLocked.length > 0 && existingLocked[0].checkoutLockedAt) {
+      throw new DeliveryError(
+        `You have an active payment session for order ${existingLocked[0].orderNumber}. Please complete or cancel that payment before starting a new one.`,
+        409
+      );
+    }
+    
     const [previousRequest] = await tx.select().from(orders).where(or(eq(orders.checkoutKey, body.idempotencyKey), and(eq(orders.userId, me.id), sql`coalesce(${orders.paymentData}->'checkoutRequestIds', '[]'::jsonb) @> ${JSON.stringify([body.idempotencyKey])}::jsonb`)));
     if (previousRequest) {
       if (previousRequest.userId !== me.id) throw new DeliveryError('Checkout request is unavailable', 409);

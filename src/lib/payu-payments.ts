@@ -42,7 +42,14 @@ export async function preparePayuCheckout(tx: Transaction, order: Order, email: 
     if (!Number.isSafeInteger(order.total * 100) || order.total <= 0) throw new DeliveryError('Invalid order total');
     [attempt] = await tx.insert(payuAttempts).values({ txnId: randomBytes(12).toString('hex'), orderId: order.id,
       environment: config.environment, merchantKey: config.key, amount: order.total * 100, firstname, email: paymentEmail(email || order.customerEmail) }).returning();
-    await tx.update(orders).set({ payuTxnId: attempt.txnId, paymentMethod: 'payu', customerEmail: attempt.email, paymentStatus: 'pending', updatedAt: new Date() }).where(eq(orders.id, order.id));
+    await tx.update(orders).set({ 
+      payuTxnId: attempt.txnId, 
+      paymentMethod: 'payu', 
+      customerEmail: attempt.email, 
+      paymentStatus: 'pending',
+      checkoutLockedAt: new Date(), // Activate checkout lock when redirecting to PayU
+      updatedAt: new Date() 
+    }).where(eq(orders.id, order.id));
   }
   const fields: Record<string, string> = { key: config.key, txnid: attempt.txnId, amount: (attempt.amount / 100).toFixed(2),
     productinfo: PAYU_PRODUCT, firstname: attempt.firstname, email: attempt.email, phone: order.customerPhone || order.shippingAddress.phone,
@@ -108,6 +115,7 @@ async function reconcileAttempt(txnid: string, callback?: Record<string, string>
     const safeState = ['initiated', 'in progress', 'pending', 'auth', 'captured', 'failed', 'usercancelled', 'bounced', 'dropped', 'autorefund'].includes(providerState) ? providerState : 'unknown';
     const [updated] = await tx.update(orders).set({
       paymentStatus: failed ? 'failed' : 'pending',
+      checkoutLockedAt: failed ? null : order.checkoutLockedAt, // Clear checkout lock on confirmed failure
       paymentData: { ...order.paymentData, payuVerification: { txnid, status: safeStatus, state: safeState, checkedAt: new Date().toISOString() } },
       updatedAt: new Date(),
     }).where(eq(orders.id, order.id)).returning();
