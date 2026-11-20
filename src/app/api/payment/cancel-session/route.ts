@@ -5,10 +5,8 @@ import { eq, and } from 'drizzle-orm';
 import { activeUser, rateLimit, deliveryFailure } from '@/lib/delivery-server';
 import { sameOrigin, DeliveryError } from '@/lib/shipment-rules';
 import { readJson, isUuid } from '@/lib/http-security';
-import { verifyPayuTransaction } from '@/lib/payu';
 import { reconcilePayu } from '@/lib/payu-payments';
 import { payuLog } from '@/lib/payu-log';
-import { releaseStock } from '@/lib/inventory';
 
 /**
  * Payment Session Cancellation Handler
@@ -120,7 +118,7 @@ export async function POST(req: Request) {
 
     // Perform PayU verification outside the transaction (network call)
     try {
-      const reconciledOrder = await reconcilePayu(result.attempt.txnId);
+      await reconcilePayu(result.attempt.txnId);
       
       // Reload order to get updated status
       const [updatedOrder] = await db.select()

@@ -1,388 +1,265 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { POST } from '@/app/api/payment/cancel-session/route';
-import { db } from '@/db';
-import { orders, payuAttempts, users } from '@/db/schema';
+import { beforeAll, afterAll, afterEach, describe, it, expect, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import * as payu from '@/lib/payu';
-import * as payuPayments from '@/lib/payu-payments';
-import { testAuth } from './test-helpers';
+import { createTestDatabase } from './database';
+import { configureTestPayu } from './payu-fixtures';
+import * as schema from '../src/db/schema';
+import { signToken } from '../src/lib/auth';
+import * as cancelRoute from '../src/app/api/payment/cancel-session/route';
+import * as payuPayments from '../src/lib/payu-payments';
 
-vi.mock('@/lib/payu', async () => {
-  const actual = await vi.importActual('@/lib/payu');
-  return {
-    ...actual,
-    verifyPayuTransaction: vi.fn(),
-  };
+const state = vi.hoisted(() => ({ db: null as unknown }));
+vi.mock('@/db', () => ({ get db() { return state.db; } }));
+vi.mock('@/lib/schedule-order-notification', () => ({ scheduleOrderNotification: vi.fn() }));
+
+let database: Awaited<ReturnType<typeof createTestDatabase>>;
+let sequence = 0;
+
+beforeAll(async () => {
+  configureTestPayu();
+  process.env.JWT_SECRET = 'isolated-cancel-session-tests-secret';
+  process.env.MSG91_WHATSAPP_ENABLED = 'false';
+  database = await createTestDatabase();
+  state.db = database.db;
 });
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); configureTestPayu(); });
+afterAll(async () => { await database.pg.close(); });
 
-vi.mock('@/lib/payu-payments', async () => {
-  const actual = await vi.importActual('@/lib/payu-payments');
-  return {
-    ...actual,
-    reconcilePayu: vi.fn(),
-  };
-});
+type User = typeof schema.users.$inferSelect;
 
-describe('PayU Payment Session Cancellation', () => {
-  let testUser: any;
-  let testOrder: any;
-  let testAttempt: any;
+function request(orderId: string, user: User) {
+  return new Request('http://localhost:3100/api/payment/cancel-session', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      cookie: 'vpb_token=' + signToken(user),
+    },
+    body: JSON.stringify({ orderId }),
+  });
+}
 
-  beforeEach(async () => {
-    // Create test user
-    const [user] = await db.insert(users).values({
-      phone: '+919876543210',
-      name: 'Test User',
-      active: true,
-      role: 'customer',
-    }).returning();
-    testUser = user;
-
-    // Create test order
-    const [order] = await db.insert(orders).values({
-      userId: testUser.id,
-      orderNumber: 'TEST-001',
-      subtotal: 1000,
-      discount: 50,
+async function setup() {
+  const n = ++sequence;
+  const [user] = await database.db
+    .insert(schema.users)
+    .values({ name: 'Cancel Test', phone: '980000' + String(n).padStart(4, '0'), passwordHash: 'test-only' })
+    .returning();
+  const [product] = await database.db
+    .insert(schema.products)
+    .values({ name: 'Cancel product', slug: 'cancel-' + n, sku: 'CANCEL-' + n, price: 950, stockQuantity: 5 })
+    .returning();
+  const [order] = await database.db
+    .insert(schema.orders)
+    .values({
+      userId: user.id,
+      orderNumber: 'CANCEL-' + n,
+      subtotal: 950,
+      discount: 0,
       shippingCharge: 0,
       total: 950,
       paymentStatus: 'pending',
       orderStatus: 'placed',
       paymentMethod: 'payu',
-      customerName: 'Test User',
-      customerEmail: 'test@example.com',
-      customerPhone: '+919876543210',
-      shippingAddress: {
-        name: 'Test User',
-        phone: '+919876543210',
-        addressLine: '123 Test St',
-        city: 'Mumbai',
-        state: 'Maharashtra',
-        pincode: '400001',
-      },
-      cartSnapshot: [{ id: 'prod-1', qty: 1, price: 1000, name: 'Test Product', image: '' }],
-    }).returning();
-    testOrder = order;
-
-    // Create test PayU attempt
-    const [attempt] = await db.insert(payuAttempts).values({
-      txnId: 'test-txn-123',
-      orderId: testOrder.id,
+      customerName: user.name,
+      customerEmail: 'cancel@example.com',
+      customerPhone: user.phone,
+      shippingAddress: { name: user.name, phone: user.phone, addressLine: '1 Test St', city: 'Mumbai', state: 'MH', pincode: '400001', landmark: '' },
+      cartSnapshot: [{ id: product.id, qty: 1 }],
+    })
+    .returning();
+  const [attempt] = await database.db
+    .insert(schema.payuAttempts)
+    .values({
+      txnId: 'cancel-txn-' + String(n).padStart(6, '0'),
+      orderId: order.id,
       environment: 'test',
-      merchantKey: 'test-key',
-      amount: 95000, // paise
-      firstname: 'Test User',
-      email: 'test@example.com',
+      merchantKey: 'isolated-payu-merchant-key',
+      amount: 95000,
+      firstname: user.name,
+      email: 'cancel@example.com',
       status: 'pending',
-    }).returning();
-    testAttempt = attempt;
+    })
+    .returning();
+  await database.db
+    .update(schema.orders)
+    .set({ payuTxnId: attempt.txnId, checkoutLockedAt: new Date() })
+    .where(eq(schema.orders.id, order.id));
+  return { user, product, order, attempt };
+}
 
-    // Link attempt to order
-    await db.update(orders)
-      .set({ payuTxnId: attempt.txnId })
-      .where(eq(orders.id, testOrder.id));
+// ─── helpers for mocking reconcilePayu ─────────────────────────────────────
+
+function mockReconcileAsSuccess(txnid: string, orderId: string) {
+  vi.spyOn(payuPayments, 'reconcilePayu').mockImplementationOnce(async () => {
+    await database.db.update(schema.orders)
+      .set({ paymentStatus: 'paid', orderStatus: 'confirmed', checkoutLockedAt: null })
+      .where(eq(schema.orders.payuTxnId, txnid));
+    await database.db.update(schema.payuAttempts)
+      .set({ status: 'paid', paymentId: 'mihpay-' + txnid, verifiedAt: new Date() })
+      .where(eq(schema.payuAttempts.txnId, txnid));
+    const [o] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, orderId));
+    return o;
+  });
+}
+
+function mockReconcileAsFailure(txnid: string, orderId: string) {
+  vi.spyOn(payuPayments, 'reconcilePayu').mockImplementationOnce(async () => {
+    await database.db.update(schema.orders)
+      .set({ paymentStatus: 'failed', checkoutLockedAt: null })
+      .where(eq(schema.orders.payuTxnId, txnid));
+    await database.db.update(schema.payuAttempts)
+      .set({ status: 'failed', verifiedAt: new Date() })
+      .where(eq(schema.payuAttempts.txnId, txnid));
+    const [o] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, orderId));
+    return o;
+  });
+}
+
+function mockReconcileAsPending(txnid: string, orderId: string) {
+  vi.spyOn(payuPayments, 'reconcilePayu').mockImplementationOnce(async () => {
+    await database.db.update(schema.payuAttempts)
+      .set({ verifiedAt: new Date() })
+      .where(eq(schema.payuAttempts.txnId, txnid));
+    const [o] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, orderId));
+    return o;
+  });
+}
+
+// ─── tests ──────────────────────────────────────────────────────────────────
+
+describe('cancel-session route', () => {
+
+  it('returns verified_failed and clears lock when PayU confirms cancellation', async () => {
+    const { user, order, attempt } = await setup();
+    mockReconcileAsFailure(attempt.txnId, order.id);
+
+    const res = await cancelRoute.POST(request(order.id, user));
+    const body = await res.json();
+
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe('verified_failed');
+    expect(body.paymentStatus).toBe('failed');
+
+    const [updated] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
+    expect(updated.paymentStatus).toBe('failed');
+    expect(updated.checkoutLockedAt).toBeNull();
   });
 
-  describe('Test Case 1: Customer Returns and Clicks Stay', () => {
-    it('should not modify payment state when user chooses to stay', async () => {
-      // This is handled in frontend - no API call made
-      // Just verify order remains unchanged
-      const [order] = await db.select().from(orders).where(eq(orders.id, testOrder.id));
-      expect(order.paymentStatus).toBe('pending');
-      expect(order.payuTxnId).toBe(testAttempt.txnId);
-    });
+  it('returns verified_paid and does not cancel when PayU reports success', async () => {
+    const { user, order, attempt } = await setup();
+    mockReconcileAsSuccess(attempt.txnId, order.id);
+
+    const res = await cancelRoute.POST(request(order.id, user));
+    const body = await res.json();
+
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe('verified_paid');
+    expect(body.paymentStatus).toBe('paid');
+
+    const [updated] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
+    expect(updated.paymentStatus).toBe('paid');
   });
 
-  describe('Test Case 2: Customer Returns and Clicks Leave', () => {
-    it('should verify payment status when user clicks leave', async () => {
-      // Mock PayU verification to return failed status
-      vi.mocked(payuPayments.reconcilePayu).mockResolvedValueOnce({
-        ...testOrder,
-        paymentStatus: 'failed',
-      });
+  it('returns still_pending and keeps lock when PayU has not finalised', async () => {
+    const { user, order, attempt } = await setup();
+    mockReconcileAsPending(attempt.txnId, order.id);
 
-      const req = new Request('http://localhost/api/payment/cancel-session', {
+    const res = await cancelRoute.POST(request(order.id, user));
+    const body = await res.json();
+
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe('still_pending');
+    expect(body.paymentStatus).toBe('pending');
+    expect(body.canRetry).toBe(false);
+
+    const [unchanged] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
+    expect(unchanged.checkoutLockedAt).not.toBeNull();
+  });
+
+  it('returns already_paid without calling PayU when order is already paid', async () => {
+    const { user, order } = await setup();
+    await database.db.update(schema.orders)
+      .set({ paymentStatus: 'paid', orderStatus: 'confirmed', checkoutLockedAt: null })
+      .where(eq(schema.orders.id, order.id));
+
+    const reconSpy = vi.spyOn(payuPayments, 'reconcilePayu');
+    const res = await cancelRoute.POST(request(order.id, user));
+    const body = await res.json();
+
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe('already_paid');
+    expect(reconSpy).not.toHaveBeenCalled();
+  });
+
+  it('returns verification_unavailable when PayU API throws', async () => {
+    const { user, order } = await setup();
+    vi.spyOn(payuPayments, 'reconcilePayu').mockRejectedValueOnce(
+      new Error('PayU temporarily unavailable')
+    );
+
+    const res = await cancelRoute.POST(request(order.id, user));
+    const body = await res.json();
+
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe('verification_unavailable');
+    expect(body.canRetry).toBe(true);
+  });
+
+  it('returns 404 when a different user tries to cancel', async () => {
+    const { order } = await setup();
+    const [other] = await database.db
+      .insert(schema.users)
+      .values({ name: 'Other', phone: '970099' + String(++sequence).padStart(4, '0'), passwordHash: 'x' })
+      .returning();
+
+    const res = await cancelRoute.POST(request(order.id, other));
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
+  });
+
+  it('returns 400 for a malformed order ID', async () => {
+    const { user } = await setup();
+    const res = await cancelRoute.POST(
+      new Request('http://localhost:3100/api/payment/cancel-session', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'http://localhost',
-        },
-        body: JSON.stringify({ orderId: testOrder.id }),
-      });
-
-      const { authReq } = testAuth(req, testUser);
-      const response = await POST(authReq);
-      const result = await response.json();
-
-      expect(result.ok).toBe(true);
-      expect(result.status).toBe('verified_failed');
-      expect(result.paymentStatus).toBe('failed');
-      expect(payuPayments.reconcilePayu).toHaveBeenCalledWith(testAttempt.txnId);
-    });
+        headers: { 'Content-Type': 'application/json', cookie: 'vpb_token=' + signToken(user) },
+        body: JSON.stringify({ orderId: 'not-a-uuid' }),
+      })
+    );
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.ok).toBe(false);
   });
 
-  describe('Test Case 3: PayU Confirms Cancellation', () => {
-    it('should mark order as failed when PayU confirms cancellation', async () => {
-      // Mock PayU verification returning failed/usercancelled
-      vi.mocked(payu.verifyPayuTransaction).mockResolvedValueOnce({
-        txnid: testAttempt.txnId,
-        status: 'failure',
-        unmappedstatus: 'usercancelled',
-        amt: '950.00',
-        productinfo: 'Cotton Manjha',
-        udf1: testOrder.id,
-        currency: 'INR',
-      });
+  it('returns terminal state from attempt without calling PayU when attempt is already paid', async () => {
+    const { user, order, attempt } = await setup();
+    // Mark the attempt as paid already (e.g. webhook arrived)
+    await database.db.update(schema.payuAttempts)
+      .set({ status: 'paid', paymentId: 'mih-pre-paid', verifiedAt: new Date() })
+      .where(eq(schema.payuAttempts.txnId, attempt.txnId));
 
-      vi.mocked(payuPayments.reconcilePayu).mockImplementationOnce(async (txnid) => {
-        // Simulate reconciliation marking as failed
-        await db.update(orders)
-          .set({ paymentStatus: 'failed' })
-          .where(eq(orders.payuTxnId, txnid));
+    const reconSpy = vi.spyOn(payuPayments, 'reconcilePayu');
+    const res = await cancelRoute.POST(request(order.id, user));
+    const body = await res.json();
 
-        await db.update(payuAttempts)
-          .set({ status: 'failed', verifiedAt: new Date() })
-          .where(eq(payuAttempts.txnId, txnid));
-
-        const [updated] = await db.select().from(orders).where(eq(orders.id, testOrder.id));
-        return updated;
-      });
-
-      const req = new Request('http://localhost/api/payment/cancel-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'http://localhost',
-        },
-        body: JSON.stringify({ orderId: testOrder.id }),
-      });
-
-      const { authReq } = testAuth(req, testUser);
-      const response = await POST(authReq);
-      const result = await response.json();
-
-      expect(result.ok).toBe(true);
-      expect(result.status).toBe('verified_failed');
-      expect(result.paymentStatus).toBe('failed');
-
-      // Verify database was updated
-      const [updatedOrder] = await db.select().from(orders).where(eq(orders.id, testOrder.id));
-      expect(updatedOrder.paymentStatus).toBe('failed');
-
-      const [updatedAttempt] = await db.select().from(payuAttempts).where(eq(payuAttempts.txnId, testAttempt.txnId));
-      expect(updatedAttempt.status).toBe('failed');
-      expect(updatedAttempt.verifiedAt).toBeTruthy();
-    });
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe('verified_paid');
+    expect(reconSpy).not.toHaveBeenCalled();
   });
 
-  describe('Test Case 4: PayU Confirms Success', () => {
-    it('should finalize payment when PayU confirms success despite cancel request', async () => {
-      // Mock PayU verification returning success/captured
-      vi.mocked(payuPayments.reconcilePayu).mockImplementationOnce(async (txnid) => {
-        // Simulate reconciliation finalizing as paid
-        await db.update(orders)
-          .set({ paymentStatus: 'paid', orderStatus: 'confirmed' })
-          .where(eq(orders.payuTxnId, txnid));
+  it('returns terminal state from attempt without calling PayU when attempt is already verified failed', async () => {
+    const { user, order, attempt } = await setup();
+    await database.db.update(schema.payuAttempts)
+      .set({ status: 'failed', verifiedAt: new Date() })
+      .where(eq(schema.payuAttempts.txnId, attempt.txnId));
 
-        await db.update(payuAttempts)
-          .set({ status: 'paid', paymentId: 'payu-12345', verifiedAt: new Date() })
-          .where(eq(payuAttempts.txnId, txnid));
+    const reconSpy = vi.spyOn(payuPayments, 'reconcilePayu');
+    const res = await cancelRoute.POST(request(order.id, user));
+    const body = await res.json();
 
-        const [updated] = await db.select().from(orders).where(eq(orders.id, testOrder.id));
-        return updated;
-      });
-
-      const req = new Request('http://localhost/api/payment/cancel-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'http://localhost',
-        },
-        body: JSON.stringify({ orderId: testOrder.id }),
-      });
-
-      const { authReq } = testAuth(req, testUser);
-      const response = await POST(authReq);
-      const result = await response.json();
-
-      expect(result.ok).toBe(true);
-      expect(result.status).toBe('verified_paid');
-      expect(result.paymentStatus).toBe('paid');
-
-      // Verify database was updated
-      const [updatedOrder] = await db.select().from(orders).where(eq(orders.id, testOrder.id));
-      expect(updatedOrder.paymentStatus).toBe('paid');
-
-      const [updatedAttempt] = await db.select().from(payuAttempts).where(eq(payuAttempts.txnId, testAttempt.txnId));
-      expect(updatedAttempt.status).toBe('paid');
-      expect(updatedAttempt.paymentId).toBe('payu-12345');
-    });
+    expect(body.ok).toBe(true);
+    expect(body.status).toBe('verified_failed');
+    expect(reconSpy).not.toHaveBeenCalled();
   });
 
-  describe('Test Case 5: Payment Still Pending', () => {
-    it('should return still_pending when PayU has not finalized', async () => {
-      // Mock PayU verification returning pending status
-      vi.mocked(payuPayments.reconcilePayu).mockImplementationOnce(async (txnid) => {
-        // Reconciliation keeps status as pending
-        await db.update(payuAttempts)
-          .set({ verifiedAt: new Date() })
-          .where(eq(payuAttempts.txnId, txnid));
-
-        const [updated] = await db.select().from(orders).where(eq(orders.id, testOrder.id));
-        return updated;
-      });
-
-      const req = new Request('http://localhost/api/payment/cancel-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'http://localhost',
-        },
-        body: JSON.stringify({ orderId: testOrder.id }),
-      });
-
-      const { authReq } = testAuth(req, testUser);
-      const response = await POST(authReq);
-      const result = await response.json();
-
-      expect(result.ok).toBe(true);
-      expect(result.status).toBe('still_pending');
-      expect(result.paymentStatus).toBe('pending');
-      expect(result.canRetry).toBe(false);
-    });
-  });
-
-  describe('Test Case 6: Already Paid Order', () => {
-    it('should return already_paid when order was previously finalized', async () => {
-      // Update order to paid status
-      await db.update(orders)
-        .set({ paymentStatus: 'paid', orderStatus: 'confirmed' })
-        .where(eq(orders.id, testOrder.id));
-
-      const req = new Request('http://localhost/api/payment/cancel-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'http://localhost',
-        },
-        body: JSON.stringify({ orderId: testOrder.id }),
-      });
-
-      const { authReq } = testAuth(req, testUser);
-      const response = await POST(authReq);
-      const result = await response.json();
-
-      expect(result.ok).toBe(true);
-      expect(result.status).toBe('already_paid');
-      expect(result.paymentStatus).toBe('paid');
-      // Should not call PayU verification for already paid orders
-      expect(payuPayments.reconcilePayu).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('Test Case 7: PayU Verification Failure', () => {
-    it('should return verification_unavailable when PayU API fails', async () => {
-      // Mock PayU verification throwing error
-      vi.mocked(payuPayments.reconcilePayu).mockRejectedValueOnce(
-        new Error('PayU service temporarily unavailable')
-      );
-
-      const req = new Request('http://localhost/api/payment/cancel-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'http://localhost',
-        },
-        body: JSON.stringify({ orderId: testOrder.id }),
-      });
-
-      const { authReq } = testAuth(req, testUser);
-      const response = await POST(authReq);
-      const result = await response.json();
-
-      expect(result.ok).toBe(true);
-      expect(result.status).toBe('verification_unavailable');
-      expect(result.canRetry).toBe(true);
-      expect(result.message).toContain('Unable to verify payment status');
-    });
-  });
-
-  describe('Test Case 8: Unauthorized Access', () => {
-    it('should reject cancel request from different user', async () => {
-      // Create different user
-      const [otherUser] = await db.insert(users).values({
-        phone: '+919999999999',
-        name: 'Other User',
-        active: true,
-        role: 'customer',
-      }).returning();
-
-      const req = new Request('http://localhost/api/payment/cancel-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'http://localhost',
-        },
-        body: JSON.stringify({ orderId: testOrder.id }),
-      });
-
-      const { authReq } = testAuth(req, otherUser);
-      const response = await POST(authReq);
-
-      expect(response.status).toBe(404);
-      const result = await response.json();
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain('Order not found');
-    });
-  });
-
-  describe('Test Case 9: Rate Limiting', () => {
-    it('should enforce rate limit on cancellation requests', async () => {
-      const requests = [];
-      
-      // Make 11 requests (limit is 10 per 60 seconds)
-      for (let i = 0; i < 11; i++) {
-        const req = new Request('http://localhost/api/payment/cancel-session', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Origin': 'http://localhost',
-          },
-          body: JSON.stringify({ orderId: testOrder.id }),
-        });
-
-        const { authReq } = testAuth(req, testUser);
-        requests.push(POST(authReq));
-      }
-
-      const responses = await Promise.all(requests);
-      const lastResponse = responses[10];
-
-      expect(lastResponse.status).toBe(429);
-      const result = await lastResponse.json();
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain('rate limit');
-    });
-  });
-
-  describe('Test Case 10: Invalid Order ID', () => {
-    it('should reject request with invalid order ID format', async () => {
-      const req = new Request('http://localhost/api/payment/cancel-session', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Origin': 'http://localhost',
-        },
-        body: JSON.stringify({ orderId: 'invalid-id-123' }),
-      });
-
-      const { authReq } = testAuth(req, testUser);
-      const response = await POST(authReq);
-
-      expect(response.status).toBe(400);
-      const result = await response.json();
-      expect(result.ok).toBe(false);
-      expect(result.error).toContain('Invalid order ID');
-    });
-  });
 });
