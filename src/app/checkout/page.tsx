@@ -338,7 +338,7 @@ export default function CheckoutPage() {
                   ) : null}
                 </div>
 
-                {step >= 2 && (
+                {step === 2 && (
                   <div className="card p-6">
                     <h3 className="font-serif text-xl font-bold">Step 3 — Order Summary</h3>
                     <div className="mt-3 space-y-2">
@@ -470,7 +470,6 @@ export default function CheckoutPage() {
                               </button>
                             )}
                           </div>
-                          <p className="mt-4 text-center text-xs text-stone-400">Need assistance? Contact us on <a href="https://wa.me/919081111697" className="font-semibold text-[#7a1f1f] underline">WhatsApp +91 90811 11697</a></p>
                         </>
                       )}
 
