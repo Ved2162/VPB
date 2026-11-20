@@ -61,6 +61,7 @@ export default function CheckoutPage() {
   const hasShownSessionModal = useRef(false);
   const [checkoutLocked, setCheckoutLocked] = useState(false);
   const checkLockInProgress = useRef(false);
+  const [modalSource, setModalSource] = useState<'cancelled' | 'returned'>('returned');
 
   const subtotal = order?.subtotal ?? cartSubtotal;
   const discount = order?.discount ?? orderDiscount(subtotal);
@@ -142,6 +143,7 @@ export default function CheckoutPage() {
         // Always show modal for locked checkout (even on page load/refresh)
         if (!hasShownSessionModal.current) {
           hasShownSessionModal.current = true;
+          setModalSource('returned');
           setShowSessionModal(true);
           setStep(3);
         }
@@ -225,30 +227,42 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!me || loading || restoredPayment.current) return;
-    const orderId = new URLSearchParams(window.location.search).get('paymentOrder') || sessionStorage.getItem('vpb-payu-order');
-    // Restore browser storage after hydration; cancel the task on unmount.
+    const params = new URLSearchParams(window.location.search);
+    const orderId = params.get('paymentOrder') || sessionStorage.getItem('vpb-payu-order');
+    // cancelled=true means PayU called the curl endpoint — customer used PayU's
+    // own Cancel button.  Show the Leave/Stay modal immediately; do not start
+    // auto-verification, which would surface a confusing "pending" error.
+    const userCancelledOnPayU = params.get('cancelled') === 'true';
+
     const timer = window.setTimeout(async () => {
       restoredPayment.current = true;
-      
-      // First check if there's an active checkout lock
+
+      // Always check the backend lock first — it covers refresh, back button,
+      // multi-tab, and cross-device scenarios.
       const hasLock = await checkCheckoutLock();
-      
-      // If no lock but we have an orderId from URL/storage, verify it
+
       if (!hasLock && orderId && /^[0-9a-f-]{36}$/i.test(orderId)) {
-        // Check if user returned from PayU - show Leave/Stay modal
-        const returnedFromPayu = new URLSearchParams(window.location.search).has('paymentOrder');
-        if (returnedFromPayu && !hasShownSessionModal.current) {
+        const returnedFromPayU = params.has('paymentOrder');
+        // Show modal on any return from PayU (whether via surl/furl/curl or
+        // directly via URL param). Do not auto-verify on a curl return.
+        if ((returnedFromPayU || userCancelledOnPayU) && !hasShownSessionModal.current) {
           hasShownSessionModal.current = true;
+          setModalSource(userCancelledOnPayU ? 'cancelled' : 'returned');
           setShowSessionModal(true);
           setPendingReceipt(orderId);
           setStep(3);
+          // Clear the cancelled param from the URL so a refresh doesn't re-trigger.
+          if (userCancelledOnPayU) {
+            const clean = new URL(window.location.href);
+            clean.searchParams.delete('cancelled');
+            window.history.replaceState(null, '', clean.toString());
+          }
         } else {
           void verifyReceipt(orderId);
         }
       }
     }, 0);
     return () => window.clearTimeout(timer);
-    // Restore once after login; authenticated API determines payment state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, loading]);
 
@@ -640,6 +654,7 @@ export default function CheckoutPage() {
         onLeave={handleLeavePayment}
         isCancelling={isCancellingSession}
         orderNumber={order?.orderNumber}
+        source={modalSource}
       />
     </div>
   );

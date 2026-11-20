@@ -8,10 +8,25 @@ interface PaymentSessionModalProps {
   onLeave: () => void;
   isCancelling: boolean;
   orderNumber?: string;
+  /** 'cancelled' = customer used PayU's own cancel/back button (curl callback).
+   *  'returned'  = customer navigated back another way (back button, tab switch, etc.).
+   *  Affects headline and body copy only; behaviour is identical. */
+  source?: 'cancelled' | 'returned';
 }
 
-export function PaymentSessionModal({ isOpen, onStay, onLeave, isCancelling, orderNumber }: PaymentSessionModalProps) {
+export function PaymentSessionModal({ isOpen, onStay, onLeave, isCancelling, orderNumber, source = 'returned' }: PaymentSessionModalProps) {
   if (!isOpen) return null;
+
+  const title = source === 'cancelled'
+    ? 'Are you sure you want to leave payment?'
+    : 'Your payment session is still active';
+
+  const body = source === 'cancelled'
+    ? 'Your payment is currently in progress. Leaving this page will request cancellation of your payment session.'
+    : "You haven't completed or exited your payment session yet. Would you like to continue your payment or leave checkout?";
+
+  const stayLabel = source === 'cancelled' ? 'Stay on Page' : 'Stay & Complete Payment';
+  const leaveLabel = source === 'cancelled' ? 'Leave Page' : 'Leave & Cancel Payment';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
@@ -24,7 +39,7 @@ export function PaymentSessionModal({ isOpen, onStay, onLeave, isCancelling, ord
             </span>
             <div>
               <h2 className="font-serif text-lg font-bold text-[#1c0f0a]">
-                Your payment session is still active
+                {title}
               </h2>
               {orderNumber && (
                 <p className="text-xs text-stone-500">Order {orderNumber}</p>
@@ -35,9 +50,7 @@ export function PaymentSessionModal({ isOpen, onStay, onLeave, isCancelling, ord
 
         {/* Content */}
         <div className="px-6 py-5">
-          <p className="text-sm leading-relaxed text-stone-600">
-            You haven't completed or exited your payment session yet. Would you like to continue your payment or leave checkout?
-          </p>
+          <p className="text-sm leading-relaxed text-stone-600">{body}</p>
 
           <div className="mt-5 space-y-2">
             {/* Stay Button */}
@@ -46,7 +59,7 @@ export function PaymentSessionModal({ isOpen, onStay, onLeave, isCancelling, ord
               disabled={isCancelling}
               className="btn-primary w-full !py-3.5 disabled:opacity-60"
             >
-              <Lock size={15} /> Stay & Complete Payment
+              <Lock size={15} /> {stayLabel}
             </button>
 
             {/* Leave Button */}
@@ -58,7 +71,7 @@ export function PaymentSessionModal({ isOpen, onStay, onLeave, isCancelling, ord
               {isCancelling ? (
                 <ButtonLoader label="Checking payment status..." />
               ) : (
-                "Leave & Cancel Payment"
+                leaveLabel
               )}
             </button>
           </div>

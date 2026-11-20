@@ -54,7 +54,12 @@ export async function preparePayuCheckout(tx: Transaction, order: Order, email: 
   const fields: Record<string, string> = { key: config.key, txnid: attempt.txnId, amount: (attempt.amount / 100).toFixed(2),
     productinfo: PAYU_PRODUCT, firstname: attempt.firstname, email: attempt.email, phone: order.customerPhone || order.shippingAddress.phone,
     udf1: order.id, udf2: '', udf3: '', udf4: '', udf5: '',
-    surl: config.base + '/api/payment/payu/return', curl: config.base + '/api/payment/payu/return', furl: config.base + '/api/payment/payu/return' };
+    surl: config.base + '/api/payment/payu/return',
+    // curl is PayU's cancel URL — called when the customer clicks Cancel on
+    // the PayU page.  Route to the dedicated cancel handler so the checkout
+    // page can surface the Leave/Stay decision immediately.
+    curl: config.base + '/api/payment/payu/cancel',
+    furl: config.base + '/api/payment/payu/return' };
   fields.hash = requestHash(fields, config.salt);
   payuLog('form_prepared', { orderId: order.id, txnid: attempt.txnId, amountPaise: attempt.amount });
   return { ok: true, orderId: order.id, action: config.action, fields,
