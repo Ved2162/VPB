@@ -106,7 +106,7 @@ export async function POST(req: Request) {
       }
 
       // Verify current status with PayU
-      payuLog('cancel_session_verify', { orderId: order.id, txnid: order.payuTxnId, requestedBy: me.id });
+      payuLog('cancel_session_verify', { orderId: order.id, txnid: order.payuTxnId });
 
       return { order, attempt, requiresVerification: true };
     });
@@ -172,11 +172,10 @@ export async function POST(req: Request) {
       });
 
     } catch (verificationError) {
-      // If verification fails (PayU timeout, network error, etc.)
-      payuLog('cancel_session_verify_failed', { 
-        orderId: result.order.id, 
+      payuLog('cancel_session_verify_failed', {
+        orderId: result.order.id,
         txnid: result.attempt.txnId,
-        error: verificationError instanceof Error ? verificationError.message : 'Unknown error'
+        code: verificationError instanceof Error ? verificationError.message : 'unknown',
       });
 
       return NextResponse.json({
@@ -191,9 +190,9 @@ export async function POST(req: Request) {
     }
 
   } catch (error) {
-    payuLog('cancel_session_error', { 
-      error: error instanceof Error ? error.message : 'Unknown error',
-      httpStatus: error instanceof DeliveryError ? error.status : 500
+    payuLog('cancel_session_error', {
+      httpStatus: error instanceof DeliveryError ? error.status : 500,
+      code: error instanceof Error ? error.message : 'unknown',
     });
     return deliveryFailure(error);
   }
