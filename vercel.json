@@ -13,6 +13,7 @@
     "deploymentEnabled": {
       "main": true,
       "codex/payu-sandbox": true,
+      "codex/payu-return-recovery": true,
       "*": false
     }
   }

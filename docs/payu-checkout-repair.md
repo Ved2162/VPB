@@ -1,5 +1,17 @@
 # PayU checkout repair — 26 October 2026
 
+## Back-button recovery — 20 November 2026
+
+Returning from PayU without paying no longer requires a PayU cancellation callback before another checkout can be offered. The customer sees **Pay again** when owned-order verification freshly confirms `pending / initiated`, with no debit or bank-reference evidence. PayU documents `initiated` as landing on its payment page, and `in progress` as proceeding through Pay Now to the bank. The retry endpoint re-verifies the provider result before changing anything; `in progress`, `auth`, other pending states, transport errors, and unknown transactions continue to require status checks.
+
+The customer explicitly requests a replacement for the last verified merchant transaction ID. User/order locks and comparison with the current attempt prevent simultaneous clicks, stale tabs, and request replays from generating multiple replacements. The new checkout uses a new transaction ID on the same order, preserves the cart/address and all prior attempts, and clears the old retry eligibility. An abandoned attempt remains recorded as pending; it is never falsely marked failed or cancelled by browser navigation. No schema migration is required.
+
+Refresh restores the saved order and rechecks eligibility. A `pageshow` handler also rechecks after a browser restores the website from its back/forward cache. Neither event automatically starts a charge. Once payment processing begins, the UI offers status checks; when an unprocessed checkout or terminal failure is verified, it offers the appropriate payment action. The UI does not claim that another PayU page is still open.
+
+An old hosted page may remain payable if it is open in another tab. Customers are instructed to close older PayU pages and use the fresh checkout. A late capture from an older attempt can still complete the same order. If two attempts eventually capture, the first remains the order's payment and the additional verified capture is retained on the attempt and in private order metadata, with an admin review notice and a sanitized log event. Stock, invoices and confirmation notifications are allocated only once. Refunds are not issued automatically; the merchant must reconcile additional captures in PayU.
+
+Local verification covers an actual browser Back from an intercepted PayU fixture, refresh, a simulated browser-cache restoration, explicit fresh retries, concurrent requests, stale attempt tokens, bank/debit evidence, late captures, and duplicate-capture fulfillment protection. Provider traffic is mocked and the database is disposable; these checks do not claim that a real-money production transaction was exercised.
+
 ## Live cutover recovery — 27 October 2026
 
 Live credentials and Production mode remain unchanged. After the merchant confirmed sandbox end-to-end success and requested Live activation, a restored browser receipt caused `Payment environment mismatch`. Vercel's production logs identified transaction `c6f01c9862f4cd772b25b178`, belonging to the failed Rs 2750 sandbox order `VPB-202610-161353`; the visible cart had meanwhile changed to Rs 1. Read-only database inspection found no Rs 1 order. The frontend was checking the older receipt instead of initiating the current cart.

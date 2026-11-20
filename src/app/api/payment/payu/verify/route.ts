@@ -4,7 +4,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { activeUser, deliveryFailure, rateLimit } from '@/lib/delivery-server';
 import { isUuid, readJson } from '@/lib/http-security';
 import { sameOrigin, DeliveryError } from '@/lib/shipment-rules';
-import { reconcilePayu, isRetiredSandboxAttempt, retiredSandboxResult } from '@/lib/payu-payments';
+import { reconcilePayu, canRestartPayuCheckout, isRetiredSandboxAttempt, retiredSandboxResult } from '@/lib/payu-payments';
 import { payuConfig } from '@/lib/payu';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -25,6 +25,8 @@ export async function POST(req: Request) {
     if (isRetiredSandboxAttempt(attempt?.environment, payuConfig().environment))
       return Response.json(retiredSandboxResult(order.id), { status: 409, headers: { 'Cache-Control': 'no-store' } });
     const verified = ['paid', 'refunded'].includes(order.paymentStatus) ? order : await reconcilePayu(order.payuTxnId);
-    return Response.json({ ok: true, orderId: order.id, paymentStatus: verified.paymentStatus, attemptCount, providerState: verified.paymentData?.payuVerification?.txnid === verified.payuTxnId ? verified.paymentData.payuVerification.state : null }, { headers: { 'Cache-Control': 'no-store' } });
+    return Response.json({ ok: true, orderId: order.id, paymentStatus: verified.paymentStatus, attemptCount,
+      attemptId: verified.payuTxnId, canRetry: verified.paymentStatus === 'failed' || canRestartPayuCheckout(verified),
+      providerState: verified.paymentData?.payuVerification?.txnid === verified.payuTxnId ? verified.paymentData.payuVerification.state : null }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (error) { return deliveryFailure(error); }
 }

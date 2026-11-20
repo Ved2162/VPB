@@ -371,6 +371,15 @@ export default function Admin() {
                   <div className="rounded-xl bg-[#fdf6e7] p-3 space-y-1.5 text-sm">{(selOrder.items || []).map((it: any) => (<div key={it.id} className="flex justify-between"><span>{it.productName} × {it.quantity}</span><b>{money(it.price * it.quantity)}</b></div>))}<div className="mt-2 flex justify-between border-t border-[#ecdcb9] pt-2 font-bold"><span>Total</span><span>{money(selOrder.total)}</span></div></div>
 
                   {selOrder.paymentData?.stockReviewRequired && <p className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">⚠ Stock review required — set status to Confirmed to allocate.</p>}
+                  {Object.keys(selOrder.paymentData?.payuAdditionalCaptures || {}).length > 0 && (
+                    <div className="rounded-xl bg-amber-50 p-3 text-sm text-amber-900">
+                      <p className="font-bold">Additional payment received — merchant review required</p>
+                      <p>Check these payments in PayU and reconcile any extra charge. This order is fulfilled only once.</p>
+                      {Object.entries<{ paymentId: string; amount: number }>(selOrder.paymentData.payuAdditionalCaptures).map(([txnid, capture]) => (
+                        <p key={txnid} className="mt-2 break-all">{money(capture.amount / 100)} · PayU {capture.paymentId} · Transaction {txnid}</p>
+                      ))}
+                    </div>
+                  )}
 
                   {/* Editable fields */}
                   <p className="label">Customer Name</p>

@@ -4,6 +4,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { DeliveryError } from './shipment-rules';
 import { safelyEnsureInvoice } from './invoices';
 import { lockedStock, releaseStock, validateStockItems } from './inventory';
+import { payuLog } from './payu-log';
 
 type Confirmation = { provider?: 'historical' | 'payu'; orderId: string; paymentId: string; amount: number; currency: string; method?: string; userId?: string; reconciledBy?: string };
 // Callback, webhook and authorized stock reconciliation share the same order lock.
@@ -17,9 +18,25 @@ export async function finalizePayment(confirmation: Confirmation) {
     if (!payu && (!confirmation.reconciledBy || order.paymentStatus !== 'paid')) throw new DeliveryError('Historical payment processing is retired', 410);
     if (confirmation.currency !== 'INR' || !Number.isSafeInteger(confirmation.amount) || confirmation.amount <= 0 || confirmation.amount !== order.total * 100) throw new DeliveryError('Payment amount does not match the order', 400);
     if (payu && attempt!.amount !== confirmation.amount) throw new DeliveryError('Payment attempt amount mismatch');
-    if (['paid', 'refunded'].includes(order.paymentStatus) && (payu ? order.payuPaymentId : order.razorpayPaymentId) !== confirmation.paymentId) throw new DeliveryError('Payment needs manual reconciliation', 409);
-    if (payu) await tx.update(payuAttempts).set({ status: 'paid', paymentId: confirmation.paymentId, verifiedAt: new Date() }).where(eq(payuAttempts.txnId, confirmation.orderId));
-    if (order.paymentStatus === 'refunded' || order.paymentStatus === 'paid' && (!order.paymentData?.stockReviewRequired || !confirmation.reconciledBy)) return { order, already: true };
+    if (payu) {
+      const [lockedAttempt] = await tx.select().from(payuAttempts).where(eq(payuAttempts.txnId, confirmation.orderId)).for('update');
+      if (!lockedAttempt || lockedAttempt.paymentId && lockedAttempt.paymentId !== confirmation.paymentId)
+        throw new DeliveryError('Payment reference changed. Contact support for reconciliation.', 409);
+      await tx.update(payuAttempts).set({ status: 'paid', paymentId: confirmation.paymentId, verifiedAt: new Date() }).where(eq(payuAttempts.txnId, confirmation.orderId));
+    }
+    if (['paid', 'refunded'].includes(order.paymentStatus) && (payu ? order.payuPaymentId : order.razorpayPaymentId) !== confirmation.paymentId) {
+      if (!payu) throw new DeliveryError('Payment needs manual reconciliation', 409);
+      // A delayed capture from an older checkout must be retained for merchant
+      // reconciliation, without allocating stock or sending another receipt.
+      const additional = order.paymentData?.payuAdditionalCaptures || {};
+      if (additional[confirmation.orderId]) return { order, already: true, additionalCapture: true };
+      const [review] = await tx.update(orders).set({ paymentData: { ...order.paymentData,
+        payuAdditionalCaptures: { ...additional, [confirmation.orderId]: { paymentId: confirmation.paymentId,
+          amount: confirmation.amount, verifiedAt: new Date().toISOString(), reviewRequired: true } },
+      }, updatedAt: new Date() }).where(eq(orders.id, order.id)).returning();
+      return { order: review, already: true, additionalCapture: true };
+    }
+    if (order.paymentStatus === 'refunded' || order.paymentStatus === 'paid' && (!order.paymentData?.stockReviewRequired || !confirmation.reconciledBy)) return { order, already: true, additionalCapture: false };
     if (confirmation.reconciledBy && (order.paymentStatus !== 'paid' || order.orderStatus === 'cancelled')) throw new DeliveryError('This order cannot be released for fulfillment', 409);
     const snapshot = order.cartSnapshot;
     validateStockItems(snapshot);
@@ -51,8 +68,9 @@ export async function finalizePayment(confirmation: Confirmation) {
     }).where(eq(orders.id, order.id)).returning();
     if (!stockReviewRequired && paid.orderStatus !== 'cancelled') await tx.insert(orderNotifications).values({ orderId: paid.id }).onConflictDoNothing();
     if (confirmation.reconciledBy) await tx.insert(deliveryAudit).values({ actorId: confirmation.reconciledBy, resource: 'order', resourceId: order.id, changes: { operation: 'stock_reconciled', outcome: 'success' } });
-    return { order: paid, already: false };
+    return { order: paid, already: false, additionalCapture: false };
   });
-  if (!result.order.paymentData?.stockReviewRequired && result.order.paymentStatus === 'paid' && result.order.orderStatus !== 'cancelled') await safelyEnsureInvoice(result.order.id);
+  if (result.additionalCapture) payuLog('additional_capture', { orderId: result.order.id, txnid: confirmation.orderId, code: 'merchant_review_required' });
+  if (!result.additionalCapture && !result.order.paymentData?.stockReviewRequired && result.order.paymentStatus === 'paid' && result.order.orderStatus !== 'cancelled') await safelyEnsureInvoice(result.order.id);
   return result;
 }

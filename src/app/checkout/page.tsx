@@ -39,6 +39,8 @@ export default function CheckoutPage() {
   const [pendingReceipt, setPendingReceipt] = useState<string | null>(null);
   const [paymentFailed, setPaymentFailed] = useState(false);
   const [providerState, setProviderState] = useState<string | null>(null);
+  const [canPayAgain, setCanPayAgain] = useState(false);
+  const [activeAttemptId, setActiveAttemptId] = useState<string | null>(null);
   const restoredPayment = useRef(false);
   const paymentAction = useRef(false);
   const verificationAction = useRef(false);
@@ -139,6 +141,7 @@ export default function CheckoutPage() {
     window.history.replaceState(null, '', '/checkout');
     setPendingReceipt(null); setOrder(null); setPaymentFailed(false);
     setProviderState(null);
+    setCanPayAgain(false); setActiveAttemptId(null);
     setVerificationPaused(true); pollCount.current = 0; setStep(3);
     setErr(result.error || 'The previous test checkout has ended. Continue to PayU to start a Live checkout.');
     return true;
@@ -147,6 +150,7 @@ export default function CheckoutPage() {
   const verifyReceipt = async (orderId: string) => {
     if (verificationAction.current) return;
     verificationAction.current = true;
+    setCanPayAgain(false);
     setPlacing(true); setErr(''); setPendingReceipt(orderId); setStep(3);
     try {
       const response = await apiFetch('/api/payment/payu/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ orderId }) });
@@ -159,6 +163,9 @@ export default function CheckoutPage() {
       setOrder(result.order);
       setPaymentFailed(confirmation.paymentStatus === 'failed');
       setProviderState(typeof confirmation.providerState === 'string' ? confirmation.providerState : null);
+      const attemptId = typeof confirmation.attemptId === 'string' && /^[a-f0-9]{24}$/.test(confirmation.attemptId) ? confirmation.attemptId : null;
+      setActiveAttemptId(attemptId);
+      setCanPayAgain(confirmation.canRetry === true && !!attemptId);
       if (confirmation.paymentStatus !== 'paid') {
         setVerificationPaused(confirmation.paymentStatus === 'failed');
         return;
@@ -198,9 +205,28 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, loading]);
 
+  useEffect(() => {
+    if (!me || loading) return;
+    const restoreAfterBack = (event: PageTransitionEvent) => {
+      if (!event.persisted) return;
+      // The browser may restore React state from before the PayU navigation.
+      // Re-check the saved attempt rather than retaining a frozen loading state.
+      const orderId = sessionStorage.getItem('vpb-payu-order');
+      if (!orderId || !/^[0-9a-f-]{36}$/i.test(orderId)) return;
+      paymentAction.current = false;
+      pollCount.current = 0;
+      setPlacing(false);
+      void verifyReceipt(orderId);
+    };
+    window.addEventListener('pageshow', restoreAfterBack);
+    return () => window.removeEventListener('pageshow', restoreAfterBack);
+    // The event reads browser storage, and verifyReceipt guards concurrent checks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [me, loading]);
+
   const placeOrder = async (retryOrderId?: string) => {
     if (placing || paymentAction.current) return;
-    if (pendingReceipt && !paymentFailed) { await verifyReceipt(pendingReceipt); return; }
+    if (pendingReceipt && !paymentFailed && !canPayAgain) { await verifyReceipt(pendingReceipt); return; }
     const existingId = retryOrderId || pendingReceipt;
     if (!existingId && (!sel || !hasDeliveryEmail)) { toast('Complete your delivery address and email first'); setStep(1); return; }
     paymentAction.current = true;
@@ -215,7 +241,7 @@ export default function CheckoutPage() {
       }
       const response = await apiFetch(existingId ? '/api/payment/retry' : '/api/payment/create', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include',
-        body: JSON.stringify(existingId ? { orderId: existingId } : { items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel, email: deliveryEmail.trim(), idempotencyKey: checkoutRequest.id }) });
+        body: JSON.stringify(existingId ? { orderId: existingId, ...(activeAttemptId ? { previousAttemptId: activeAttemptId } : {}) } : { items: lines.map(l => ({ id: l.id, qty: l.qty })), address: sel, email: deliveryEmail.trim(), idempotencyKey: checkoutRequest.id }) });
       const result = await response.json();
       if (recoverRetiredTestCheckout(result)) return;
       if (!response.ok || !result.ok) {
@@ -233,13 +259,16 @@ export default function CheckoutPage() {
         sessionStorage.setItem('vpb-payu-order', result.orderId);
         setPendingReceipt(result.orderId); setPaymentFailed(false); setStep(3);
         setProviderState(null);
+        setCanPayAgain(false);
         pollCount.current = 0; setVerificationPaused(false);
+        await verifyReceipt(result.orderId);
         return;
       }
       if (!['https://test.payu.in/_payment', 'https://secure.payu.in/_payment'].includes(result.action)) throw new Error('Invalid checkout destination');
       sessionStorage.setItem('vpb-payu-order', result.orderId);
       setPendingReceipt(result.orderId); setPaymentFailed(false);
       setProviderState(null);
+      setCanPayAgain(false); setActiveAttemptId(result.fields?.txnid || null);
       if (result.orderSummary) setOrder(result.orderSummary);
       pollCount.current = 0; setVerificationPaused(false);
       await submitPayuForm(result.action, result.fields);
@@ -375,7 +404,7 @@ export default function CheckoutPage() {
                         </>
                       )}
 
-                      {/* A pending provider result permits checks, not another charge. */}
+                      {/* Offer a new checkout only when the server verified it has not reached the bank. */}
                       {pendingReceipt && !paymentFailed && !err && (
                         <>
                           <div className="flex items-start gap-3">
@@ -383,12 +412,17 @@ export default function CheckoutPage() {
                               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                             </span>
                             <div>
-                              <p className="font-serif text-lg font-bold text-[#1c0f0a]">{providerState === 'initiated' ? 'Payment not completed' : 'Awaiting payment confirmation'}</p>
-                              <p className="mt-1 text-sm text-stone-500">PayU has not confirmed a final payment result yet. If a PayU page is open, complete or cancel it there. If it is closed, check the status again or contact us for help.</p>
-                              <p className="mt-1 text-xs text-stone-400">Your order is saved{order?.orderNumber ? `: ${order.orderNumber}` : ''}. A new payment can start after PayU confirms this attempt has ended.</p>
+                              <p className="font-serif text-lg font-bold text-[#1c0f0a]">{canPayAgain || providerState === 'initiated' ? 'Payment not completed' : 'Awaiting payment confirmation'}</p>
+                              <p className="mt-1 text-sm text-stone-500">{canPayAgain
+                                ? 'Your payment was not completed. Tap Pay again to open a fresh PayU checkout for this order. Close any older PayU page and use the new checkout.'
+                                : 'PayU has not confirmed a final payment result yet. Your order is saved. Check the status here before making another payment.'}</p>
+                              <p className="mt-1 text-xs text-stone-400">Your order is saved{order?.orderNumber ? `: ${order.orderNumber}` : ''}. {canPayAgain ? 'Your cart and delivery details are ready.' : 'Check the current payment before trying again.'}</p>
                             </div>
                           </div>
                           <div className="mt-5 flex flex-col gap-2.5">
+                            {canPayAgain && <button onClick={() => placeOrder(pendingReceipt)} disabled={placing || retryAfter > 0} className="btn-primary w-full !py-3.5 disabled:opacity-60">
+                              {placing ? <ButtonLoader label="Opening PayU…" /> : <><Lock size={14} /> Pay again</>}
+                            </button>}
                             <button onClick={() => verifyReceipt(pendingReceipt)} disabled={placing || retryAfter > 0} className="btn-primary w-full !py-3.5 disabled:opacity-60">
                               {placing ? <ButtonLoader label="Checking…" /> : <><RefreshCw size={14} /> Check payment status</>}
                             </button>

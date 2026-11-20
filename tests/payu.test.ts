@@ -16,7 +16,7 @@ import * as returned from '../src/app/api/payment/payu/return/route';
 import * as paymentStatus from '../src/app/api/payment/payu/status/route';
 import * as orderApi from '../src/app/api/orders/[id]/route';
 import * as extra from '../src/app/api/extra/route';
-import { reconcilePayu } from '../src/lib/payu-payments';
+import { reconcilePayu, canRestartPayuCheckout } from '../src/lib/payu-payments';
 import { amountInPaise, payuConfig, requestHash, sha512, validResponseHash } from '../src/lib/payu';
 import { ensureInvoice } from '../src/lib/invoices';
 let database: Awaited<ReturnType<typeof createTestDatabase>>;
@@ -316,6 +316,111 @@ test('a capture discovered during retry returns the paid order without starting 
   const response = await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId }, f.user));
   expect(await response.json()).toEqual({ ok: true, alreadyPaid: true, orderId: f.checkout.orderId });
   expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(1);
+});
+
+test('backing out before Pay Now permits one explicit fresh checkout on the same order', async () => {
+  const f = await fixture();
+  provider(f, { status: 'pending', unmappedstatus: 'initiated', net_amount_debit: '0.00', bank_ref_num: '' });
+  const checked = await (await verify.POST(request('/api/payment/payu/verify', { orderId: f.checkout.orderId }, f.user))).json();
+  expect(checked).toMatchObject({ paymentStatus: 'pending', canRetry: true, attemptId: f.checkout.fields.txnid });
+  const response = await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId, previousAttemptId: checked.attemptId }, f.user));
+  expect(response.status).toBe(200);
+  const next = await response.json();
+  expect(next.orderId).toBe(f.checkout.orderId);
+  expect(next.fields.txnid).not.toBe(checked.attemptId);
+  expect(next.attemptCount).toBe(2);
+  expect(await database.db.select().from(schema.orders).where(eq(schema.orders.userId, f.user.id))).toHaveLength(1);
+  const attempts = await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, next.orderId));
+  expect(attempts).toHaveLength(2);
+  expect(attempts.find(a => a.txnId === checked.attemptId)?.status).toBe('pending');
+  expect(await database.db.select().from(schema.orderInvoices).where(eq(schema.orderInvoices.orderId, next.orderId))).toHaveLength(0);
+
+  // Replaying the old button cannot issue a third checkout, or submit the new ID twice.
+  const replay = await (await retry.POST(request('/api/payment/retry', { orderId: next.orderId, previousAttemptId: checked.attemptId }, f.user))).json();
+  expect(replay).toMatchObject({ needsVerification: true, orderId: next.orderId, attemptCount: 2 });
+  expect(replay.fields).toBeUndefined();
+});
+
+test('concurrent pay-again requests for one abandoned attempt create only one replacement', async () => {
+  const f = await fixture(); provider(f, { status: 'pending', unmappedstatus: 'initiated', net_amount_debit: '0' });
+  const body = { orderId: f.checkout.orderId, previousAttemptId: f.checkout.fields.txnid };
+  const responses = await Promise.all([retry.POST(request('/api/payment/retry', body, f.user)), retry.POST(request('/api/payment/retry', body, f.user))]);
+  const results = await Promise.all(responses.map(r => r.json()));
+  expect(responses.every(r => r.status === 200)).toBe(true);
+  expect(results.filter(r => r.fields)).toHaveLength(1);
+  expect(results.filter(r => r.needsVerification)).toHaveLength(1);
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(2);
+});
+
+test.each([
+  { status: 'pending', unmappedstatus: 'in progress', net_amount_debit: '0' },
+  { status: 'success', unmappedstatus: 'auth', net_amount_debit: '95.00' },
+  { status: 'pending', unmappedstatus: 'pending', net_amount_debit: '0' },
+  { status: 'pending', unmappedstatus: 'initiated', net_amount_debit: '95.00' },
+  { status: 'pending', unmappedstatus: 'initiated', net_amount_debit: 'unknown' },
+  { status: 'pending', unmappedstatus: 'initiated', net_amount_debit: '0', bank_ref_num: 'BANK-REFERENCE' },
+])('Pay again stays blocked for processing, debit or bank-reference evidence: %j', async state => {
+  const f = await fixture(); provider(f, { ...state, bank_ref_num: state.bank_ref_num || '' });
+  const checked = await (await verify.POST(request('/api/payment/payu/verify', { orderId: f.checkout.orderId }, f.user))).json();
+  expect(checked.canRetry).toBe(false);
+  const response = await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId, previousAttemptId: f.checkout.fields.txnid, canRetry: true }, f.user));
+  const result = await response.json();
+  expect(result).toMatchObject({ needsVerification: true });
+  expect(result.fields).toBeUndefined();
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(1);
+});
+
+test('pay-again eligibility is fresh and is rechecked when the user clicks', async () => {
+  const f = await fixture(); provider(f, { status: 'pending', unmappedstatus: 'initiated' });
+  await reconcilePayu(f.checkout.fields.txnid);
+  const order = await saved(f);
+  expect(canRestartPayuCheckout(order)).toBe(true);
+  expect(canRestartPayuCheckout({ ...order, paymentData: { ...order.paymentData, payuVerification: { ...order.paymentData!.payuVerification, checkedAt: new Date(Date.now() - 31000).toISOString() } } })).toBe(false);
+  provider(f, { status: 'success', unmappedstatus: 'auth', net_amount_debit: '95.00' });
+  const result = await (await retry.POST(request('/api/payment/retry', { orderId: order.id, previousAttemptId: f.checkout.fields.txnid }, f.user))).json();
+  expect(result.needsVerification).toBe(true);
+  expect(result.fields).toBeUndefined();
+});
+
+test('a later initiated response cannot erase earlier bank processing evidence', async () => {
+  const f = await fixture(); provider(f, { status: 'success', unmappedstatus: 'auth', net_amount_debit: '95.00' });
+  await reconcilePayu(f.checkout.fields.txnid);
+  provider(f, { status: 'pending', unmappedstatus: 'initiated', net_amount_debit: '0' });
+  const checked = await (await verify.POST(request('/api/payment/payu/verify', { orderId: f.checkout.orderId }, f.user))).json();
+  expect(checked.canRetry).toBe(false);
+  expect((await saved(f)).paymentData?.payuVerification.processingStarted).toBe(true);
+  const result = await (await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId, previousAttemptId: f.checkout.fields.txnid }, f.user))).json();
+  expect(result.needsVerification).toBe(true);
+  expect(result.fields).toBeUndefined();
+  expect(await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, f.checkout.orderId))).toHaveLength(1);
+});
+
+test('a delayed capture from the abandoned checkout pays the original order exactly once', async () => {
+  const f = await fixture(); provider(f, { status: 'pending', unmappedstatus: 'initiated' });
+  const next = await (await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId, previousAttemptId: f.checkout.fields.txnid }, f.user))).json();
+  expect(next.fields).toBeDefined();
+  provider(f); await reconcilePayu(f.checkout.fields.txnid);
+  expect(await saved(f)).toMatchObject({ paymentStatus: 'paid', payuTxnId: f.checkout.fields.txnid });
+  expect((await database.db.select().from(schema.products).where(eq(schema.products.id, f.product.id)))[0].stockQuantity).toBe(4);
+  expect(await database.db.select().from(schema.orderInvoices).where(eq(schema.orderInvoices.orderId, next.orderId))).toHaveLength(1);
+});
+
+test('two captured attempts are retained for merchant review and never double-fulfill the order', async () => {
+  const f = await fixture(); provider(f, { status: 'pending', unmappedstatus: 'initiated' });
+  const next = await (await retry.POST(request('/api/payment/retry', { orderId: f.checkout.orderId, previousAttemptId: f.checkout.fields.txnid }, f.user))).json();
+  provider({ ...f, checkout: next }, { mihpayid: '880001' });
+  await reconcilePayu(next.fields.txnid);
+  provider(f, { mihpayid: '880002' });
+  await reconcilePayu(f.checkout.fields.txnid);
+  await reconcilePayu(f.checkout.fields.txnid);
+  const order = await saved(f);
+  expect(order).toMatchObject({ paymentStatus: 'paid', payuTxnId: next.fields.txnid, payuPaymentId: '880001' });
+  expect(order.paymentData?.payuAdditionalCaptures).toEqual({ [f.checkout.fields.txnid]: { paymentId: '880002', amount: 9500, verifiedAt: expect.any(String), reviewRequired: true } });
+  const attempts = await database.db.select().from(schema.payuAttempts).where(eq(schema.payuAttempts.orderId, order.id));
+  expect(attempts.every(a => a.status === 'paid')).toBe(true);
+  expect((await database.db.select().from(schema.products).where(eq(schema.products.id, f.product.id)))[0].stockQuantity).toBe(4);
+  for (const table of [schema.orderItems, schema.orderInvoices, schema.orderNotifications])
+    expect(await database.db.select().from(table).where(eq(table.orderId, order.id))).toHaveLength(1);
 });
 
 test('return uses 303 and revisits resolve via owned order; unauthorized access and admin payment edits are rejected', async () => {

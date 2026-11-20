@@ -271,14 +271,14 @@ test('cancelled payment offers retry on the same order; verification errors neve
   await expect(page.getByRole('heading', { name: 'Order Confirmed!', exact: true })).toHaveCount(0);
 });
 
-test('an initiated checkout with eight attempts remains checkable and permits retry only after verified cancellation', async ({ page }) => {
+test('an unverified initiated checkout remains checkable until cancellation is confirmed', async ({ page }) => {
   let cancelled = false;
   await page.route('**/api/payment/payu/verify', route => route.fulfill({ json: {
     ok: true, orderId, paymentStatus: cancelled ? 'failed' : 'pending', providerState: cancelled ? 'usercancelled' : 'initiated', attemptCount: 8,
   } }));
   await page.goto('/checkout?paymentOrder=' + orderId);
   await expect(page.getByText('Payment not completed', { exact: true })).toBeVisible();
-  await expect(page.getByText(/If a PayU page is open/)).toBeVisible();
+  await expect(page.getByText(/PayU has not confirmed a final payment result yet/)).toBeVisible();
   await expect(page.getByText('We’re unable to confirm your payment', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('link', { name: 'Contact payment support', exact: true })).toHaveAttribute('href', /PAYU-BROWSER-FIXTURE/);
   await expect(page.getByRole('button', { name: 'Retry payment', exact: true })).toHaveCount(0);
@@ -298,4 +298,72 @@ test('an initiated checkout with eight attempts remains checkable and permits re
   await expect(page.getByRole('heading', { name: 'PayU fixture checkout', exact: true })).toBeVisible();
   expect(retriedOrder).toBe(orderId);
   expect(postedId).toBe('b'.repeat(24));
+});
+
+test('browser Back and refresh restore Pay again, and a new checkout keeps the same order', async ({ page }) => {
+  let currentAttempt = 'a'.repeat(24), created = 0, retried = 0, checked = 0;
+  await page.route('**/api/payment/create', route => {
+    created++;
+    return route.fulfill({ json: { ok: true, orderId, action: 'https://test.payu.in/_payment', fields: { txnid: currentAttempt, amount: '100.00' } } });
+  });
+  await page.route('**/api/payment/payu/verify', route => {
+    checked++;
+    return route.fulfill({ json: { ok: true, orderId, paymentStatus: 'pending', providerState: 'initiated', attemptId: currentAttempt, canRetry: true, attemptCount: 8 } });
+  });
+  await page.route('https://test.payu.in/_payment', route => route.fulfill({ contentType: 'text/html', body: '<h1>PayU payment options fixture</h1>' }));
+  await page.goto('/checkout');
+  await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'PayU payment options fixture' })).toBeVisible();
+
+  await page.goBack();
+  await expect(page.getByRole('button', { name: 'Pay again', exact: true })).toBeEnabled();
+  await expect(page.getByText('PAYU-BROWSER-FIXTURE', { exact: false }).first()).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Pay again', exact: true })).toBeEnabled();
+  await expect(page.getByText('We’re unable to confirm your payment', { exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('vpb_cart') || '[]'))).toHaveLength(1);
+  await page.screenshot({ path: 'test-results/payment-return-pay-again.png', fullPage: true });
+
+  await page.route('**/api/payment/retry', async route => {
+    retried++;
+    expect(route.request().postDataJSON()).toEqual({ orderId, previousAttemptId: 'a'.repeat(24) });
+    currentAttempt = 'b'.repeat(24);
+    await route.fulfill({ json: { ok: true, orderId, action: 'https://test.payu.in/_payment', fields: { txnid: currentAttempt, amount: '100.00' } } });
+  });
+  await page.getByRole('button', { name: 'Pay again', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'PayU payment options fixture' })).toBeVisible();
+  expect(created).toBe(1);
+  expect(retried).toBe(1);
+  expect(checked).toBeGreaterThanOrEqual(2);
+});
+
+test('a browser cache restore refreshes payment status without creating another checkout', async ({ page }) => {
+  await page.addInitScript(orderId => sessionStorage.setItem('vpb-payu-order', orderId), orderId);
+  let captured = false, checks = 0;
+  await page.route('**/api/payment/create', () => { throw new Error('A restored checkout must not create an order'); });
+  await page.route('**/api/payment/retry', () => { throw new Error('Restoring the browser must not retry automatically'); });
+  await page.route('**/api/payment/payu/verify', route => {
+    checks++;
+    return route.fulfill({ json: { ok: true, orderId, paymentStatus: captured ? 'paid' : 'pending', providerState: captured ? 'captured' : 'initiated', attemptId: 'a'.repeat(24), canRetry: !captured } });
+  });
+  await page.goto('/checkout');
+  await expect(page.getByRole('button', { name: 'Pay again', exact: true })).toBeEnabled();
+  captured = true;
+  await page.evaluate(() => window.dispatchEvent(new PageTransitionEvent('pageshow', { persisted: true })));
+  await expect(page.getByRole('heading', { name: 'Order Confirmed!', exact: true })).toBeVisible();
+  expect(checks).toBe(2);
+});
+
+test('bank processing remains checkable after Back or refresh and never offers a second charge', async ({ page }) => {
+  await page.addInitScript(orderId => sessionStorage.setItem('vpb-payu-order', orderId), orderId);
+  await page.route('**/api/payment/payu/verify', route => route.fulfill({ json: {
+    ok: true, orderId, paymentStatus: 'pending', providerState: 'auth', attemptId: 'a'.repeat(24), canRetry: false,
+  } }));
+  await page.goto('/checkout');
+  await expect(page.getByRole('button', { name: 'Check payment status', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Pay again', exact: true })).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByRole('button', { name: 'Check payment status', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: 'Pay again', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Retry payment', exact: true })).toHaveCount(0);
 });

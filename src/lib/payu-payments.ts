@@ -13,6 +13,17 @@ import { payuLog } from './payu-log';
 type Transaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Order = typeof orders.$inferSelect;
 
+// PayU's initiated state precedes Pay Now/bank processing. Only a fresh,
+// server-verified result with no debit/reference evidence can be replaced.
+export function canRestartPayuCheckout(order: Order) {
+  const verification = order.paymentData?.payuVerification;
+  const age = Date.now() - Date.parse(verification?.checkedAt || '');
+  return order.orderStatus === 'placed' && order.paymentStatus === 'pending' &&
+    verification?.txnid === order.payuTxnId && verification.status === 'pending' &&
+    verification.state === 'initiated' && verification.canRestart === true &&
+    Number.isFinite(age) && age >= 0 && age <= 30000;
+}
+
 export function isRetiredSandboxAttempt(environment: string | undefined, currentEnvironment: string) {
   return environment === 'test' && currentEnvironment === 'production';
 }
@@ -22,8 +33,9 @@ export function retiredSandboxResult(orderId: string) {
     error: 'Your previous checkout was a test payment. Live payments are now enabled. Continue to PayU to start a fresh checkout.' };
 }
 
-// Caller holds the user and order locks. Verified pending attempts only return status recovery.
-export async function preparePayuCheckout(tx: Transaction, order: Order, email: unknown) {
+// Caller holds user/order locks. Pending attempts need an explicit, freshly
+// verified initiated-checkout replacement; processing payments stay blocked.
+export async function preparePayuCheckout(tx: Transaction, order: Order, email: unknown, restartAttemptId?: string) {
   const config = payuConfig(true);
   if (order.razorpayOrderId) throw new DeliveryError('This historical Razorpay order requires support before retrying.', 409);
   if (['paid', 'refunded'].includes(order.paymentStatus) || order.orderStatus !== 'placed') throw new DeliveryError('Order is no longer payable', 409);
@@ -32,17 +44,19 @@ export async function preparePayuCheckout(tx: Transaction, order: Order, email: 
   if (attempt && (attempt.environment !== config.environment || attempt.merchantKey !== config.key || attempt.amount !== order.total * 100 || attempt.orderId !== order.id))
     throw new DeliveryError('Payment configuration changed. Contact support for reconciliation.', 409);
   if (attempt?.status === 'paid') throw new DeliveryError('Order is already paid', 409);
-  if (attempt?.status === 'pending' && attempt.verifiedAt) {
+  const restart = !!attempt && restartAttemptId === attempt.txnId && canRestartPayuCheckout(order);
+  if (attempt?.status === 'pending' && attempt.verifiedAt && !restart) {
     payuLog('retry_blocked', { orderId: order.id, txnid: attempt.txnId, status: 'pending' });
     return { ok: true, needsVerification: true, orderId: order.id };
   }
-  if (!attempt || attempt.status === 'failed' && attempt.verifiedAt) {
+  if (!attempt || attempt.status === 'failed' && attempt.verifiedAt || restart) {
     const firstname = order.customerName || order.shippingAddress.name;
     if (!firstname || firstname.includes('|')) throw new DeliveryError('Invalid payment name');
     if (!Number.isSafeInteger(order.total * 100) || order.total <= 0) throw new DeliveryError('Invalid order total');
     [attempt] = await tx.insert(payuAttempts).values({ txnId: randomBytes(12).toString('hex'), orderId: order.id,
       environment: config.environment, merchantKey: config.key, amount: order.total * 100, firstname, email: paymentEmail(email || order.customerEmail) }).returning();
-    await tx.update(orders).set({ payuTxnId: attempt.txnId, paymentMethod: 'payu', customerEmail: attempt.email, paymentStatus: 'pending', updatedAt: new Date() }).where(eq(orders.id, order.id));
+    await tx.update(orders).set({ payuTxnId: attempt.txnId, paymentMethod: 'payu', customerEmail: attempt.email, paymentStatus: 'pending',
+      paymentData: { ...order.paymentData, payuVerification: null }, updatedAt: new Date() }).where(eq(orders.id, order.id));
   }
   const fields: Record<string, string> = { key: config.key, txnid: attempt.txnId, amount: (attempt.amount / 100).toFixed(2),
     productinfo: PAYU_PRODUCT, firstname: attempt.firstname, email: attempt.email, phone: order.customerPhone || order.shippingAddress.phone,
@@ -93,10 +107,13 @@ async function reconcileAttempt(txnid: string, callback?: Record<string, string>
   if (providerStatus === 'success' && providerState === 'captured') {
     if (!/^\d{1,80}$/.test(detail.mihpayid || '')) throw new DeliveryError('Invalid PayU payment reference');
     const result = await finalizePayment({ provider: 'payu', orderId: txnid, paymentId: detail.mihpayid, amount: attempt.amount, currency: 'INR', method: 'payu' });
-    if (!result.order.paymentData?.stockReviewRequired && result.order.orderStatus !== 'cancelled') scheduleOrderNotification(result.order.id);
+    if (!result.additionalCapture && !result.order.paymentData?.stockReviewRequired && result.order.orderStatus !== 'cancelled') scheduleOrderNotification(result.order.id);
     return result.order;
   }
   const failed = ['failure', 'failed'].includes(providerStatus) && ['failed', 'usercancelled', 'bounced', 'dropped'].includes(providerState);
+  const debit = detail.net_amount_debit;
+  const noDebit = debit == null || /^(?:0+(?:\.0{1,2})?)$/.test(String(debit).trim());
+  const bankReference = [detail.bank_ref_num, detail.bank_ref_no, detail.bankReferenceNumber].some(value => value != null && String(value).trim() !== '');
   return db.transaction(async tx => {
     const [order] = await tx.select().from(orders).where(eq(orders.id, attempt.orderId)).for('update');
     if (!order) throw new DeliveryError('Order not found', 404);
@@ -106,9 +123,15 @@ async function reconcileAttempt(txnid: string, callback?: Record<string, string>
     if (attempt.amount !== order.total * 100) throw new DeliveryError('Payment amount does not match the order');
     const safeStatus = ['success', 'failure', 'failed', 'pending'].includes(providerStatus) ? providerStatus : 'unknown';
     const safeState = ['initiated', 'in progress', 'pending', 'auth', 'captured', 'failed', 'usercancelled', 'bounced', 'dropped', 'autorefund'].includes(providerState) ? providerState : 'unknown';
+    const prior = order.paymentData?.payuVerification;
+    // A slower/out-of-order status response must not erase evidence that this
+    // attempt reached the bank and make it eligible for another charge.
+    const previouslyProcessing = prior?.txnid === txnid && (prior.processingStarted === true || ['in progress', 'auth', 'pending'].includes(prior.state));
+    const processingStarted = previouslyProcessing || !noDebit || bankReference || providerStatus === 'success' || ['in progress', 'auth', 'pending'].includes(providerState);
+    const canRestart = providerStatus === 'pending' && providerState === 'initiated' && !processingStarted;
     const [updated] = await tx.update(orders).set({
       paymentStatus: failed ? 'failed' : 'pending',
-      paymentData: { ...order.paymentData, payuVerification: { txnid, status: safeStatus, state: safeState, checkedAt: new Date().toISOString() } },
+      paymentData: { ...order.paymentData, payuVerification: { txnid, status: safeStatus, state: safeState, canRestart, processingStarted, checkedAt: new Date().toISOString() } },
       updatedAt: new Date(),
     }).where(eq(orders.id, order.id)).returning();
     if (failed) await releaseStock(tx, order.id);
