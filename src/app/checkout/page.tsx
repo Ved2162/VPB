@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { BrandedLink as Link } from "@/components/loading";
 import { Check, Lock, AlertTriangle, RefreshCw } from "lucide-react";
 import { useCart, useAuth, useToast } from "@/lib/store";
-import { money, WHATSAPP_URL } from "@/lib/data";
+import { money } from "@/lib/data";
 import { SafeImg } from "@/components/site";
 
 import { InvoiceActions } from '@/components/invoice-actions';
@@ -61,7 +61,6 @@ export default function CheckoutPage() {
   const discount = order?.discount ?? orderDiscount(subtotal);
   const ship = order?.shippingCharge ?? 0;
   const total = order?.total ?? payableTotal(subtotal, ship);
-  const paymentSupportUrl = `${WHATSAPP_URL}?text=${encodeURIComponent(`Please help me check payment for order ${order?.orderNumber || pendingReceipt || ''}.`)}`;
 
   // Countdown timer for rate-limit cooldown
   useEffect(() => {
@@ -426,7 +425,6 @@ export default function CheckoutPage() {
                             <button onClick={() => verifyReceipt(pendingReceipt)} disabled={placing || retryAfter > 0} className="btn-primary w-full !py-3.5 disabled:opacity-60">
                               {placing ? <ButtonLoader label="Checking…" /> : <><RefreshCw size={14} /> Check payment status</>}
                             </button>
-                            <a href={paymentSupportUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost w-full text-center">Contact payment support</a>
                             <Link href="/account" className="btn-ghost w-full text-center">Return to my orders</Link>
                           </div>
                         </>
@@ -480,7 +478,6 @@ export default function CheckoutPage() {
                                 {placing ? <ButtonLoader label="Opening PayU…" /> : 'Try payment again'}
                               </button>
                             )}
-                            {pendingReceipt && <a href={paymentSupportUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost w-full text-center">Contact payment support</a>}
                             {!pendingReceipt && retryAfter <= 0 && (
                               <button onClick={() => { setErr(''); placeOrder(); }} disabled={placing} className="btn-ghost w-full !py-3">
                                 {placing ? <ButtonLoader label="Opening PayU…" /> : <><RefreshCw size={14} /> Continue to PayU</>}

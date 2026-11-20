@@ -280,7 +280,6 @@ test('an unverified initiated checkout remains checkable until cancellation is c
   await expect(page.getByText('Payment not completed', { exact: true })).toBeVisible();
   await expect(page.getByText(/PayU has not confirmed a final payment result yet/)).toBeVisible();
   await expect(page.getByText('We’re unable to confirm your payment', { exact: true })).toHaveCount(0);
-  await expect(page.getByRole('link', { name: 'Contact payment support', exact: true })).toHaveAttribute('href', /PAYU-BROWSER-FIXTURE/);
   await expect(page.getByRole('button', { name: 'Retry payment', exact: true })).toHaveCount(0);
   cancelled = true;
   await page.getByRole('button', { name: 'Check payment status', exact: true }).click();
