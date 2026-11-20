@@ -13,6 +13,7 @@ import { SafeImg } from "@/components/site";
 import { InvoiceActions } from '@/components/invoice-actions';
 import { submitPayuForm } from '@/lib/payu-navigation';
 import { orderDiscount, payableTotal } from '@/lib/pricing';
+import { PaymentSessionModal } from '@/components/payment-session-modal';
 
 const STEPS = ["Account", "Address", "Summary", "Payment", "Done"];
 
@@ -55,6 +56,9 @@ export default function CheckoutPage() {
   const [retryAfter, setRetryAfter] = useState(0);
   const [attemptCount, setAttemptCount] = useState(0);
   const MAX_ATTEMPTS = 3;
+  const [showSessionModal, setShowSessionModal] = useState(false);
+  const [isCancellingSession, setIsCancellingSession] = useState(false);
+  const hasShownSessionModal = useRef(false);
 
   const subtotal = order?.subtotal ?? cartSubtotal;
   const discount = order?.discount ?? orderDiscount(subtotal);
@@ -191,7 +195,18 @@ export default function CheckoutPage() {
     // Restore browser storage after hydration; cancel the task on unmount.
     const timer = window.setTimeout(() => {
       restoredPayment.current = true;
-      if (orderId && /^[0-9a-f-]{36}$/i.test(orderId)) void verifyReceipt(orderId);
+      if (orderId && /^[0-9a-f-]{36}$/i.test(orderId)) {
+        // Check if user returned from PayU - show Leave/Stay modal
+        const returnedFromPayu = new URLSearchParams(window.location.search).has('paymentOrder');
+        if (returnedFromPayu && !hasShownSessionModal.current) {
+          hasShownSessionModal.current = true;
+          setShowSessionModal(true);
+          setPendingReceipt(orderId);
+          setStep(3);
+        } else {
+          void verifyReceipt(orderId);
+        }
+      }
     }, 0);
     return () => window.clearTimeout(timer);
     // Restore once after login; authenticated API determines payment state.
@@ -246,6 +261,61 @@ export default function CheckoutPage() {
       await submitPayuForm(result.action, result.fields);
     } catch (error) { setVerificationPaused(true); showErr(error instanceof Error ? error.message : 'Payment gateway error. Please retry.'); }
     finally { paymentAction.current = false; setPlacing(false); }
+  };
+
+  const handleStayPayment = () => {
+    setShowSessionModal(false);
+    if (pendingReceipt) {
+      void placeOrder(pendingReceipt);
+    }
+  };
+
+  const handleLeavePayment = async () => {
+    if (!pendingReceipt || isCancellingSession) return;
+    setIsCancellingSession(true);
+    try {
+      const response = await apiFetch('/api/payment/cancel-session', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ orderId: pendingReceipt })
+      });
+      const result = await response.json();
+      
+      if (!result.ok) {
+        throw new Error(result.error || 'Unable to process cancellation request');
+      }
+
+      setShowSessionModal(false);
+
+      // Handle different cancellation outcomes
+      if (result.status === 'verified_paid' || result.status === 'already_paid') {
+        // Payment was actually successful!
+        setPaymentFailed(false);
+        await verifyReceipt(pendingReceipt);
+        toast('Payment was successfully completed!');
+      } else if (result.status === 'verified_failed') {
+        // Payment confirmed as failed/cancelled
+        setPaymentFailed(true);
+        setVerificationPaused(true);
+        sessionStorage.removeItem('vpb-payu-order');
+        toast(result.message || 'Payment session cancelled');
+      } else if (result.status === 'still_pending') {
+        // Still processing at PayU
+        setVerificationPaused(true);
+        setErr(result.message || 'Payment is still being processed');
+      } else if (result.status === 'verification_unavailable') {
+        // Could not verify - show manual check option
+        setVerificationPaused(true);
+        setErr(result.message || 'Unable to verify payment status. Please try checking again.');
+      }
+    } catch (error) {
+      setShowSessionModal(false);
+      setVerificationPaused(true);
+      showErr(error instanceof Error ? error.message : 'Unable to process cancellation request');
+    } finally {
+      setIsCancellingSession(false);
+    }
   };
 
   if (!ready || loading) return <SectionLoader label="Preparing secure checkout…" />;
@@ -493,6 +563,15 @@ export default function CheckoutPage() {
           </div>
         </div>
       )}
+
+      {/* Payment Session Modal */}
+      <PaymentSessionModal
+        isOpen={showSessionModal}
+        onStay={handleStayPayment}
+        onLeave={handleLeavePayment}
+        isCancelling={isCancellingSession}
+        orderNumber={order?.orderNumber}
+      />
     </div>
   );
 }
