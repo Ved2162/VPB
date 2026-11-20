@@ -110,7 +110,6 @@ export const orders = pgTable("orders", {
   paidAt: timestamp("paid_at"),
   paymentData: jsonb("payment_data").$type<Record<string, any>>().default({}),
   cartSnapshot: jsonb("cart_snapshot").$type<Array<{ id: string; qty: number }>>().default([]).notNull(),
-  checkoutLockedAt: timestamp("checkout_locked_at", { withTimezone: true }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

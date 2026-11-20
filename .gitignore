@@ -99,6 +99,10 @@ drizzle/
 # ======================
 .vercel
 
+# Local Node.js and browser binaries (installed by CI/local tooling)
+.local-node/
+.playwright-browsers/
+
 # Local security-audit scratch files (may contain private diagnostics)
 .audit-local/
 docs/*audit*.local.md

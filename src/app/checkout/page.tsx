@@ -59,9 +59,6 @@ export default function CheckoutPage() {
   const [showSessionModal, setShowSessionModal] = useState(false);
   const [isCancellingSession, setIsCancellingSession] = useState(false);
   const hasShownSessionModal = useRef(false);
-  const [checkoutLocked, setCheckoutLocked] = useState(false);
-  const checkLockInProgress = useRef(false);
-  const [modalSource, setModalSource] = useState<'cancelled' | 'returned'>('returned');
 
   const subtotal = order?.subtotal ?? cartSubtotal;
   const discount = order?.discount ?? orderDiscount(subtotal);
@@ -125,39 +122,6 @@ export default function CheckoutPage() {
       setForm({ name: "", phone: "", addressLine: "", city: "", state: "", pincode: "", landmark: "" });
       setStep(2); toast("Address saved");
     } else toast(j.error || "Failed");
-  };
-
-  // Check for active checkout lock - prevents concurrent payment attempts
-  const checkCheckoutLock = async () => {
-    if (checkLockInProgress.current) return;
-    checkLockInProgress.current = true;
-    try {
-      const response = await apiFetch('/api/payment/check-lock', { credentials: 'include' });
-      const result = await response.json();
-      
-      if (result.ok && result.locked) {
-        setCheckoutLocked(true);
-        setPendingReceipt(result.orderId);
-        setPaymentFailed(result.paymentStatus === 'failed');
-        
-        // Always show modal for locked checkout (even on page load/refresh)
-        if (!hasShownSessionModal.current) {
-          hasShownSessionModal.current = true;
-          setModalSource('returned');
-          setShowSessionModal(true);
-          setStep(3);
-        }
-        return true;
-      } else {
-        setCheckoutLocked(false);
-        return false;
-      }
-    } catch (error) {
-      console.error('Failed to check checkout lock:', error);
-      return false;
-    } finally {
-      checkLockInProgress.current = false;
-    }
   };
 
   const continueWithAddress = async () => {
@@ -227,70 +191,30 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (!me || loading || restoredPayment.current) return;
-    const params = new URLSearchParams(window.location.search);
-    const orderId = params.get('paymentOrder') || sessionStorage.getItem('vpb-payu-order');
-    // cancelled=true means PayU called the curl endpoint — customer used PayU's
-    // own Cancel button.  Show the Leave/Stay modal immediately; do not start
-    // auto-verification, which would surface a confusing "pending" error.
-    const userCancelledOnPayU = params.get('cancelled') === 'true';
-
-    const timer = window.setTimeout(async () => {
+    const orderId = new URLSearchParams(window.location.search).get('paymentOrder') || sessionStorage.getItem('vpb-payu-order');
+    // Restore browser storage after hydration; cancel the task on unmount.
+    const timer = window.setTimeout(() => {
       restoredPayment.current = true;
-
-      // Always check the backend lock first — it covers refresh, back button,
-      // multi-tab, and cross-device scenarios.
-      const hasLock = await checkCheckoutLock();
-
-      if (!hasLock && orderId && /^[0-9a-f-]{36}$/i.test(orderId)) {
-        const returnedFromPayU = params.has('paymentOrder');
-        // Show modal on any return from PayU (whether via surl/furl/curl or
-        // directly via URL param). Do not auto-verify on a curl return.
-        if ((returnedFromPayU || userCancelledOnPayU) && !hasShownSessionModal.current) {
+      if (orderId && /^[0-9a-f-]{36}$/i.test(orderId)) {
+        // Check if user returned from PayU - show Leave/Stay modal
+        const returnedFromPayu = new URLSearchParams(window.location.search).has('paymentOrder');
+        if (returnedFromPayu && !hasShownSessionModal.current) {
           hasShownSessionModal.current = true;
-          setModalSource(userCancelledOnPayU ? 'cancelled' : 'returned');
           setShowSessionModal(true);
           setPendingReceipt(orderId);
           setStep(3);
-          // Clear the cancelled param from the URL so a refresh doesn't re-trigger.
-          if (userCancelledOnPayU) {
-            const clean = new URL(window.location.href);
-            clean.searchParams.delete('cancelled');
-            window.history.replaceState(null, '', clean.toString());
-          }
         } else {
           void verifyReceipt(orderId);
         }
       }
     }, 0);
     return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [me, loading]);
-
-  // Periodic checkout lock check - handles browser back, multiple tabs, etc.
-  useEffect(() => {
-    if (!me || loading) return;
-    
-    // Check on mount
-    void checkCheckoutLock();
-    
-    // Check every 5 seconds while on checkout page
-    const interval = setInterval(() => {
-      void checkCheckoutLock();
-    }, 5000);
-    
-    return () => clearInterval(interval);
+    // Restore once after login; authenticated API determines payment state.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [me, loading]);
 
   const placeOrder = async (retryOrderId?: string) => {
     if (placing || paymentAction.current) return;
-    
-    // Check for active checkout lock before allowing new payment
-    if (!retryOrderId && checkoutLocked) {
-      toast('You have an active payment session. Please complete or cancel it first.');
-      return;
-    }
-    
     if (pendingReceipt && !paymentFailed) { await verifyReceipt(pendingReceipt); return; }
     const existingId = retryOrderId || pendingReceipt;
     if (!existingId && (!sel || !hasDeliveryEmail)) { toast('Complete your delivery address and email first'); setStep(1); return; }
@@ -368,18 +292,16 @@ export default function CheckoutPage() {
       if (result.status === 'verified_paid' || result.status === 'already_paid') {
         // Payment was actually successful!
         setPaymentFailed(false);
-        setCheckoutLocked(false);
         await verifyReceipt(pendingReceipt);
         toast('Payment was successfully completed!');
       } else if (result.status === 'verified_failed') {
-        // Payment confirmed as failed/cancelled - lock cleared
+        // Payment confirmed as failed/cancelled
         setPaymentFailed(true);
-        setCheckoutLocked(false); // Unlock checkout for retry
         setVerificationPaused(true);
         sessionStorage.removeItem('vpb-payu-order');
         toast(result.message || 'Payment session cancelled');
       } else if (result.status === 'still_pending') {
-        // Still processing at PayU - keep locked
+        // Still processing at PayU
         setVerificationPaused(true);
         setErr(result.message || 'Payment is still being processed');
       } else if (result.status === 'verification_unavailable') {
@@ -387,9 +309,6 @@ export default function CheckoutPage() {
         setVerificationPaused(true);
         setErr(result.message || 'Unable to verify payment status. Please try checking again.');
       }
-      
-      // Re-check lock status after cancellation
-      await checkCheckoutLock();
     } catch (error) {
       setShowSessionModal(false);
       setVerificationPaused(true);
@@ -500,9 +419,7 @@ export default function CheckoutPage() {
                         </div>
                       ))}
                     </div>
-                    <button onClick={() => placeOrder()} disabled={placing || checkoutLocked} className="btn-primary mt-4 disabled:opacity-60">
-                      {checkoutLocked ? 'Payment Session Active' : 'Continue to Payment'}
-                    </button>
+                    <button onClick={() => placeOrder()} disabled={placing} className="btn-primary mt-4 disabled:opacity-60">Continue to Payment</button>
                   </div>
                 )}
 
@@ -654,7 +571,6 @@ export default function CheckoutPage() {
         onLeave={handleLeavePayment}
         isCancelling={isCancellingSession}
         orderNumber={order?.orderNumber}
-        source={modalSource}
       />
     </div>
   );

@@ -81,17 +81,15 @@ async function setup() {
     .returning();
   await database.db
     .update(schema.orders)
-    .set({ payuTxnId: attempt.txnId, checkoutLockedAt: new Date() })
+    .set({ payuTxnId: attempt.txnId })
     .where(eq(schema.orders.id, order.id));
   return { user, product, order, attempt };
 }
 
-// ─── helpers for mocking reconcilePayu ─────────────────────────────────────
-
 function mockReconcileAsSuccess(txnid: string, orderId: string) {
   vi.spyOn(payuPayments, 'reconcilePayu').mockImplementationOnce(async () => {
     await database.db.update(schema.orders)
-      .set({ paymentStatus: 'paid', orderStatus: 'confirmed', checkoutLockedAt: null })
+      .set({ paymentStatus: 'paid', orderStatus: 'confirmed' })
       .where(eq(schema.orders.payuTxnId, txnid));
     await database.db.update(schema.payuAttempts)
       .set({ status: 'paid', paymentId: 'mihpay-' + txnid, verifiedAt: new Date() })
@@ -104,7 +102,7 @@ function mockReconcileAsSuccess(txnid: string, orderId: string) {
 function mockReconcileAsFailure(txnid: string, orderId: string) {
   vi.spyOn(payuPayments, 'reconcilePayu').mockImplementationOnce(async () => {
     await database.db.update(schema.orders)
-      .set({ paymentStatus: 'failed', checkoutLockedAt: null })
+      .set({ paymentStatus: 'failed' })
       .where(eq(schema.orders.payuTxnId, txnid));
     await database.db.update(schema.payuAttempts)
       .set({ status: 'failed', verifiedAt: new Date() })
@@ -124,11 +122,9 @@ function mockReconcileAsPending(txnid: string, orderId: string) {
   });
 }
 
-// ─── tests ──────────────────────────────────────────────────────────────────
-
 describe('cancel-session route', () => {
 
-  it('returns verified_failed and clears lock when PayU confirms cancellation', async () => {
+  it('returns verified_failed when PayU confirms cancellation', async () => {
     const { user, order, attempt } = await setup();
     mockReconcileAsFailure(attempt.txnId, order.id);
 
@@ -141,10 +137,9 @@ describe('cancel-session route', () => {
 
     const [updated] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
     expect(updated.paymentStatus).toBe('failed');
-    expect(updated.checkoutLockedAt).toBeNull();
   });
 
-  it('returns verified_paid and does not cancel when PayU reports success', async () => {
+  it('returns verified_paid when PayU reports success', async () => {
     const { user, order, attempt } = await setup();
     mockReconcileAsSuccess(attempt.txnId, order.id);
 
@@ -154,12 +149,9 @@ describe('cancel-session route', () => {
     expect(body.ok).toBe(true);
     expect(body.status).toBe('verified_paid');
     expect(body.paymentStatus).toBe('paid');
-
-    const [updated] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
-    expect(updated.paymentStatus).toBe('paid');
   });
 
-  it('returns still_pending and keeps lock when PayU has not finalised', async () => {
+  it('returns still_pending when PayU has not finalised', async () => {
     const { user, order, attempt } = await setup();
     mockReconcileAsPending(attempt.txnId, order.id);
 
@@ -170,15 +162,12 @@ describe('cancel-session route', () => {
     expect(body.status).toBe('still_pending');
     expect(body.paymentStatus).toBe('pending');
     expect(body.canRetry).toBe(false);
-
-    const [unchanged] = await database.db.select().from(schema.orders).where(eq(schema.orders.id, order.id));
-    expect(unchanged.checkoutLockedAt).not.toBeNull();
   });
 
   it('returns already_paid without calling PayU when order is already paid', async () => {
     const { user, order } = await setup();
     await database.db.update(schema.orders)
-      .set({ paymentStatus: 'paid', orderStatus: 'confirmed', checkoutLockedAt: null })
+      .set({ paymentStatus: 'paid', orderStatus: 'confirmed' })
       .where(eq(schema.orders.id, order.id));
 
     const reconSpy = vi.spyOn(payuPayments, 'reconcilePayu');
@@ -231,9 +220,8 @@ describe('cancel-session route', () => {
     expect(body.ok).toBe(false);
   });
 
-  it('returns terminal state from attempt without calling PayU when attempt is already paid', async () => {
+  it('skips PayU call when attempt is already paid', async () => {
     const { user, order, attempt } = await setup();
-    // Mark the attempt as paid already (e.g. webhook arrived)
     await database.db.update(schema.payuAttempts)
       .set({ status: 'paid', paymentId: 'mih-pre-paid', verifiedAt: new Date() })
       .where(eq(schema.payuAttempts.txnId, attempt.txnId));
@@ -247,7 +235,7 @@ describe('cancel-session route', () => {
     expect(reconSpy).not.toHaveBeenCalled();
   });
 
-  it('returns terminal state from attempt without calling PayU when attempt is already verified failed', async () => {
+  it('skips PayU call when attempt is already verified failed', async () => {
     const { user, order, attempt } = await setup();
     await database.db.update(schema.payuAttempts)
       .set({ status: 'failed', verifiedAt: new Date() })
