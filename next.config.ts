@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  experimental: { agentUpgrade: 'security' },
   distDir: process.env.NEXT_OUTPUT_DIR || '.next',
   devIndicators: false,
   poweredByHeader: false,
