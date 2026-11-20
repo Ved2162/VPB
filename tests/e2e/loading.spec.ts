@@ -88,7 +88,7 @@ test('product, account, cart and checkout use bounded section/button loading wit
   const payment = gate();
   await page.route('**/api/payment/create', async route => { await payment.promise; await route.fulfill({ status: 503, json: { ok: false, error: 'Payment connection interrupted' } }); });
   await page.getByRole('button', { name: 'Continue to Payment', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Opening PayU...' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Opening PayU…' })).toBeDisabled();
   await expect(page.locator('.vpb-global-loader')).toHaveCount(0);
   payment.release();
   await expect(page.getByRole('button', { name: 'Continue to PayU', exact: true })).toBeEnabled();

@@ -53,7 +53,7 @@ export async function POST(req: Request) {
     // provider-pending ID or create a replacement while its result is unknown.
     if (o[0].payuTxnId && o[0].paymentStatus !== 'failed') {
       payuLog('retry_blocked', { orderId: o[0].id, txnid: o[0].payuTxnId, status: o[0].paymentStatus });
-      const [cntRow] = await db.select({ n: sql<number>`count(*)::int` }).from(payuAttempts).where(eq(payuAttempts.orderId, o[0].id));
+      const [cntRow] = await tx.select({ n: sql<number>`count(*)::int` }).from(payuAttempts).where(eq(payuAttempts.orderId, o[0].id));
       return NextResponse.json({ ok: true, needsVerification: true, orderId: o[0].id, attemptCount: Number(cntRow?.n || 0) });
     }
 
@@ -61,7 +61,7 @@ export async function POST(req: Request) {
 
     await reserveStock(tx, o[0].id, o[0].cartSnapshot);
     const checkoutResult = await preparePayuCheckout(tx, o[0], body.email);
-    const [countRow] = await db.select({ n: sql<number>`count(*)::int` }).from(payuAttempts).where(eq(payuAttempts.orderId, o[0].id));
+    const [countRow] = await tx.select({ n: sql<number>`count(*)::int` }).from(payuAttempts).where(eq(payuAttempts.orderId, o[0].id));
     const attemptCount = Number(countRow?.n || 0);
     return NextResponse.json({ ...checkoutResult, attemptCount });
     });

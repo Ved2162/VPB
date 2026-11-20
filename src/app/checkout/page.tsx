@@ -5,15 +5,14 @@ import { apiFetch } from "@/lib/api-client";
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { BrandedLink as Link } from "@/components/loading";
-import { Check, Lock, Loader2, AlertTriangle, RefreshCw } from "lucide-react";
+import { Check, Lock, AlertTriangle, RefreshCw } from "lucide-react";
 import { useCart, useAuth, useToast } from "@/lib/store";
-import { money } from "@/lib/data";
+import { money, WHATSAPP_URL } from "@/lib/data";
 import { SafeImg } from "@/components/site";
 
 import { InvoiceActions } from '@/components/invoice-actions';
 import { submitPayuForm } from '@/lib/payu-navigation';
 import { orderDiscount, payableTotal } from '@/lib/pricing';
-import { PaymentSessionModal } from '@/components/payment-session-modal';
 
 const STEPS = ["Account", "Address", "Summary", "Payment", "Done"];
 
@@ -39,6 +38,7 @@ export default function CheckoutPage() {
   const [placing, setPlacing] = useState(false);
   const [pendingReceipt, setPendingReceipt] = useState<string | null>(null);
   const [paymentFailed, setPaymentFailed] = useState(false);
+  const [providerState, setProviderState] = useState<string | null>(null);
   const restoredPayment = useRef(false);
   const paymentAction = useRef(false);
   const verificationAction = useRef(false);
@@ -54,16 +54,12 @@ export default function CheckoutPage() {
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [err, setErr] = useState("");
   const [retryAfter, setRetryAfter] = useState(0);
-  const [attemptCount, setAttemptCount] = useState(0);
-  const MAX_ATTEMPTS = 3;
-  const [showSessionModal, setShowSessionModal] = useState(false);
-  const [isCancellingSession, setIsCancellingSession] = useState(false);
-  const hasShownSessionModal = useRef(false);
 
   const subtotal = order?.subtotal ?? cartSubtotal;
   const discount = order?.discount ?? orderDiscount(subtotal);
   const ship = order?.shippingCharge ?? 0;
   const total = order?.total ?? payableTotal(subtotal, ship);
+  const paymentSupportUrl = `${WHATSAPP_URL}?text=${encodeURIComponent(`Please help me check payment for order ${order?.orderNumber || pendingReceipt || ''}.`)}`;
 
   // Countdown timer for rate-limit cooldown
   useEffect(() => {
@@ -142,6 +138,7 @@ export default function CheckoutPage() {
     sessionStorage.removeItem('vpb-checkout-request');
     window.history.replaceState(null, '', '/checkout');
     setPendingReceipt(null); setOrder(null); setPaymentFailed(false);
+    setProviderState(null);
     setVerificationPaused(true); pollCount.current = 0; setStep(3);
     setErr(result.error || 'The previous test checkout has ended. Continue to PayU to start a Live checkout.');
     return true;
@@ -161,12 +158,9 @@ export default function CheckoutPage() {
       if (!result.ok || !result.order) throw new Error('Order details are temporarily unavailable. Check again or visit My Orders.');
       setOrder(result.order);
       setPaymentFailed(confirmation.paymentStatus === 'failed');
-      if (typeof confirmation.attemptCount === 'number') setAttemptCount(confirmation.attemptCount);
+      setProviderState(typeof confirmation.providerState === 'string' ? confirmation.providerState : null);
       if (confirmation.paymentStatus !== 'paid') {
-        setVerificationPaused(false);
-        setErr(confirmation.paymentStatus === 'failed'
-          ? 'Payment failed or was cancelled. Use the button below to retry on the same order.'
-          : 'PayU has not confirmed a final result yet. If the PayU page is still open, complete or cancel it there. Otherwise tap \'Check payment status\' in a minute — your order is saved. Order: ' + (result.order?.orderNumber || orderId));
+        setVerificationPaused(confirmation.paymentStatus === 'failed');
         return;
       }
       setPendingReceipt(null); setStep(4); clear();
@@ -196,16 +190,7 @@ export default function CheckoutPage() {
     const timer = window.setTimeout(() => {
       restoredPayment.current = true;
       if (orderId && /^[0-9a-f-]{36}$/i.test(orderId)) {
-        // Check if user returned from PayU - show Leave/Stay modal
-        const returnedFromPayu = new URLSearchParams(window.location.search).has('paymentOrder');
-        if (returnedFromPayu && !hasShownSessionModal.current) {
-          hasShownSessionModal.current = true;
-          setShowSessionModal(true);
-          setPendingReceipt(orderId);
-          setStep(3);
-        } else {
-          void verifyReceipt(orderId);
-        }
+        void verifyReceipt(orderId);
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -242,80 +227,24 @@ export default function CheckoutPage() {
         }
         return;
       }
-      if (typeof result.attemptCount === 'number') setAttemptCount(result.attemptCount);
       if (result.alreadyPaid) { await verifyReceipt(result.orderId); return; }
       if (result.needsVerification) {
-        // A previous PayU attempt is still pending — do not auto-verify (can show confusing errors).
-        // Store the order and let the customer check status manually.
+        // Keep the existing attempt; bounded status checks never start a charge.
         sessionStorage.setItem('vpb-payu-order', result.orderId);
         setPendingReceipt(result.orderId); setPaymentFailed(false); setStep(3);
-        if (typeof result.attemptCount === 'number') setAttemptCount(result.attemptCount);
+        setProviderState(null);
         pollCount.current = 0; setVerificationPaused(false);
         return;
       }
       if (!['https://test.payu.in/_payment', 'https://secure.payu.in/_payment'].includes(result.action)) throw new Error('Invalid checkout destination');
       sessionStorage.setItem('vpb-payu-order', result.orderId);
       setPendingReceipt(result.orderId); setPaymentFailed(false);
+      setProviderState(null);
       if (result.orderSummary) setOrder(result.orderSummary);
       pollCount.current = 0; setVerificationPaused(false);
       await submitPayuForm(result.action, result.fields);
     } catch (error) { setVerificationPaused(true); showErr(error instanceof Error ? error.message : 'Payment gateway error. Please retry.'); }
     finally { paymentAction.current = false; setPlacing(false); }
-  };
-
-  const handleStayPayment = () => {
-    setShowSessionModal(false);
-    if (pendingReceipt) {
-      void placeOrder(pendingReceipt);
-    }
-  };
-
-  const handleLeavePayment = async () => {
-    if (!pendingReceipt || isCancellingSession) return;
-    setIsCancellingSession(true);
-    try {
-      const response = await apiFetch('/api/payment/cancel-session', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ orderId: pendingReceipt })
-      });
-      const result = await response.json();
-      
-      if (!result.ok) {
-        throw new Error(result.error || 'Unable to process cancellation request');
-      }
-
-      setShowSessionModal(false);
-
-      // Handle different cancellation outcomes
-      if (result.status === 'verified_paid' || result.status === 'already_paid') {
-        // Payment was actually successful!
-        setPaymentFailed(false);
-        await verifyReceipt(pendingReceipt);
-        toast('Payment was successfully completed!');
-      } else if (result.status === 'verified_failed') {
-        // Payment confirmed as failed/cancelled
-        setPaymentFailed(true);
-        setVerificationPaused(true);
-        sessionStorage.removeItem('vpb-payu-order');
-        toast(result.message || 'Payment session cancelled');
-      } else if (result.status === 'still_pending') {
-        // Still processing at PayU
-        setVerificationPaused(true);
-        setErr(result.message || 'Payment is still being processed');
-      } else if (result.status === 'verification_unavailable') {
-        // Could not verify - show manual check option
-        setVerificationPaused(true);
-        setErr(result.message || 'Unable to verify payment status. Please try checking again.');
-      }
-    } catch (error) {
-      setShowSessionModal(false);
-      setVerificationPaused(true);
-      showErr(error instanceof Error ? error.message : 'Unable to process cancellation request');
-    } finally {
-      setIsCancellingSession(false);
-    }
   };
 
   if (!ready || loading) return <SectionLoader label="Preparing secure checkout…" />;
@@ -446,30 +375,31 @@ export default function CheckoutPage() {
                         </>
                       )}
 
-                      {/* ── State B: Payment not completed, retries remaining ── */}
-                      {pendingReceipt && !paymentFailed && attemptCount < MAX_ATTEMPTS && !err && (
+                      {/* A pending provider result permits checks, not another charge. */}
+                      {pendingReceipt && !paymentFailed && !err && (
                         <>
                           <div className="flex items-start gap-3">
                             <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff4de] text-[#c9a24b]">
                               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
                             </span>
                             <div>
-                              <p className="font-serif text-lg font-bold text-[#1c0f0a]">Payment not completed</p>
-                              <p className="mt-1 text-sm text-stone-500">Your order is safely saved. You can continue with payment whenever you're ready.</p>
-                              <p className="mt-1 text-xs text-stone-400">No need to place your order again.</p>
+                              <p className="font-serif text-lg font-bold text-[#1c0f0a]">{providerState === 'initiated' ? 'Payment not completed' : 'Awaiting payment confirmation'}</p>
+                              <p className="mt-1 text-sm text-stone-500">PayU has not confirmed a final payment result yet. If a PayU page is open, complete or cancel it there. If it is closed, check the status again or contact us for help.</p>
+                              <p className="mt-1 text-xs text-stone-400">Your order is saved{order?.orderNumber ? `: ${order.orderNumber}` : ''}. A new payment can start after PayU confirms this attempt has ended.</p>
                             </div>
                           </div>
                           <div className="mt-5 flex flex-col gap-2.5">
-                            <button onClick={() => { setErr(''); placeOrder(pendingReceipt); }} disabled={placing || retryAfter > 0} className="btn-primary w-full !py-3.5 disabled:opacity-60">
-                              {placing ? <ButtonLoader label="Opening PayU…" /> : <><Lock size={14} /> Continue to payment</>}
+                            <button onClick={() => verifyReceipt(pendingReceipt)} disabled={placing || retryAfter > 0} className="btn-primary w-full !py-3.5 disabled:opacity-60">
+                              {placing ? <ButtonLoader label="Checking…" /> : <><RefreshCw size={14} /> Check payment status</>}
                             </button>
+                            <a href={paymentSupportUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost w-full text-center">Contact payment support</a>
                             <Link href="/account" className="btn-ghost w-full text-center">Return to my orders</Link>
                           </div>
                         </>
                       )}
 
-                      {/* ── State C: Failed / cancelled — show retry with count context ── */}
-                      {pendingReceipt && paymentFailed && attemptCount < MAX_ATTEMPTS && !err && (
+                      {/* Verified failure permits a new attempt on the saved order. */}
+                      {pendingReceipt && paymentFailed && !err && (
                         <>
                           <div className="flex items-start gap-3">
                             <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff4de] text-[#c9a24b]">
@@ -482,33 +412,15 @@ export default function CheckoutPage() {
                           </div>
                           <div className="mt-5 flex flex-col gap-2.5">
                             <button onClick={() => { setErr(''); placeOrder(pendingReceipt); }} disabled={placing || retryAfter > 0} className="btn-primary w-full !py-3.5 disabled:opacity-60">
-                              {placing ? <ButtonLoader label="Opening PayU…" /> : <><Lock size={14} /> Try payment again</>}
+                              {placing ? <ButtonLoader label="Opening PayU…" /> : <><Lock size={14} /> Retry payment</>}
                             </button>
                             <Link href="/account" className="btn-ghost w-full text-center">Return to my orders</Link>
                           </div>
                         </>
                       )}
 
-                      {/* ── State D: Pending — payment may still be processing ── */}
-                      {pendingReceipt && !paymentFailed && !err && attemptCount >= MAX_ATTEMPTS && (
-                        <>
-                          <div className="flex items-start gap-3">
-                            <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-stone-100 text-stone-500">
-                              <Loader2 size={18} className="animate-spin" />
-                            </span>
-                            <div>
-                              <p className="font-serif text-lg font-bold text-[#1c0f0a]">Payment is being verified</p>
-                              <p className="mt-1 text-sm text-stone-500">Your payment may still be processing. Your order is saved — we'll update its status once confirmed.</p>
-                            </div>
-                          </div>
-                          <button onClick={() => verifyReceipt(pendingReceipt)} disabled={placing} className="btn-ghost mt-5 w-full !py-3.5">
-                            {placing ? <ButtonLoader label="Checking…" /> : <><RefreshCw size={14} /> Check payment status</>}
-                          </button>
-                        </>
-                      )}
-
-                      {/* ── State E: 3+ attempts or explicit error — verification required ── */}
-                      {(err || (pendingReceipt && attemptCount >= MAX_ATTEMPTS && paymentFailed)) && (
+                      {/* Transport, configuration and validation errors remain actionable. */}
+                      {err && (
                         <>
                           <div className="flex items-start gap-3">
                             <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full bg-amber-50 text-amber-600">
@@ -534,9 +446,10 @@ export default function CheckoutPage() {
                                 {placing ? <ButtonLoader label="Opening PayU…" /> : 'Try payment again'}
                               </button>
                             )}
+                            {pendingReceipt && <a href={paymentSupportUrl} target="_blank" rel="noopener noreferrer" className="btn-ghost w-full text-center">Contact payment support</a>}
                             {!pendingReceipt && retryAfter <= 0 && (
                               <button onClick={() => { setErr(''); placeOrder(); }} disabled={placing} className="btn-ghost w-full !py-3">
-                                {placing ? <ButtonLoader label="Opening PayU…" /> : <><RefreshCw size={14} /> Retry</>}
+                                {placing ? <ButtonLoader label="Opening PayU…" /> : <><RefreshCw size={14} /> Continue to PayU</>}
                               </button>
                             )}
                           </div>
@@ -564,14 +477,6 @@ export default function CheckoutPage() {
         </div>
       )}
 
-      {/* Payment Session Modal */}
-      <PaymentSessionModal
-        isOpen={showSessionModal}
-        onStay={handleStayPayment}
-        onLeave={handleLeavePayment}
-        isCancelling={isCancellingSession}
-        orderNumber={order?.orderNumber}
-      />
     </div>
   );
 }

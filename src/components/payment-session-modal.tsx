@@ -36,7 +36,7 @@ export function PaymentSessionModal({ isOpen, onStay, onLeave, isCancelling, ord
         {/* Content */}
         <div className="px-6 py-5">
           <p className="text-sm leading-relaxed text-stone-600">
-            You haven't completed or exited your payment session yet. Would you like to continue your payment or leave checkout?
+            You haven&apos;t completed or exited your payment session yet. Would you like to continue your payment or leave checkout?
           </p>
 
           <div className="mt-5 space-y-2">

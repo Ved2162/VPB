@@ -140,8 +140,9 @@ test('blocked form navigation explains recovery and repeated clicks never create
   // pending. Inspect/interact with the still-live document directly here.
   await expect.poll(() => page.evaluate(() => document.body.textContent)).toContain('The browser could not open PayU');
   await page.evaluate(() => {
-    const button = Array.from(document.querySelectorAll('button')).find(button => button.textContent === 'Check payment status');
-    button?.click(); button?.click();
+    const button = Array.from(document.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Check payment status');
+    if (!button) throw new Error('Payment status recovery button is missing');
+    button.click(); button.click();
   });
   await expect.poll(() => page.evaluate(() => document.body.textContent)).toContain('PayU status temporarily unavailable');
   expect(created).toBe(1);
@@ -270,13 +271,16 @@ test('cancelled payment offers retry on the same order; verification errors neve
   await expect(page.getByRole('heading', { name: 'Order Confirmed!', exact: true })).toHaveCount(0);
 });
 
-test('an open checkout explains pending state and offers a fresh attempt after verified cancellation', async ({ page }) => {
+test('an initiated checkout with eight attempts remains checkable and permits retry only after verified cancellation', async ({ page }) => {
   let cancelled = false;
   await page.route('**/api/payment/payu/verify', route => route.fulfill({ json: {
-    ok: true, orderId, paymentStatus: cancelled ? 'failed' : 'pending', providerState: cancelled ? 'usercancelled' : 'initiated',
+    ok: true, orderId, paymentStatus: cancelled ? 'failed' : 'pending', providerState: cancelled ? 'usercancelled' : 'initiated', attemptCount: 8,
   } }));
   await page.goto('/checkout?paymentOrder=' + orderId);
+  await expect(page.getByText('Payment not completed', { exact: true })).toBeVisible();
   await expect(page.getByText(/If a PayU page is open/)).toBeVisible();
+  await expect(page.getByText('We’re unable to confirm your payment', { exact: true })).toHaveCount(0);
+  await expect(page.getByRole('link', { name: 'Contact payment support', exact: true })).toHaveAttribute('href', /PAYU-BROWSER-FIXTURE/);
   await expect(page.getByRole('button', { name: 'Retry payment', exact: true })).toHaveCount(0);
   cancelled = true;
   await page.getByRole('button', { name: 'Check payment status', exact: true }).click();

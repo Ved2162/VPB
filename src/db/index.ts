@@ -35,4 +35,19 @@ function getOrCreatePool(): Pool {
   return globalForDb.__vpbPool;
 }
 
-export const db = drizzle(getOrCreatePool());
+function createDatabase() {
+  return drizzle(getOrCreatePool());
+}
+
+type Database = ReturnType<typeof createDatabase>;
+let database: Database | undefined;
+
+// Importing a route during next build must not read runtime credentials.
+// Initialize on first use, and bind methods to the real Drizzle instance.
+export const db = new Proxy({} as Database, {
+  get(_target, property) {
+    const instance = database ??= createDatabase();
+    const value = Reflect.get(instance, property, instance);
+    return typeof value === 'function' ? value.bind(instance) : value;
+  },
+});
